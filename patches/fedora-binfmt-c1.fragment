@@ -1,0 +1,3 @@
+# Cerro Fedora 45 FEX candidate. Merge into the exact Cerro kernel config.
+# The original C3 kernel lacks init_binfmt_misc, so an isolated module fails.
+CONFIG_BINFMT_MISC=y

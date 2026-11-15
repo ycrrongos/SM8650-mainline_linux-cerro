@@ -1,0 +1,15 @@
+#!/bin/sh
+# Fedora PID 1 handoff after Cerro's embedded initramfs has mounted the root.
+set -eu
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mkdir -p /dev/pts /run /tmp /sys/fs/cgroup
+mount -t devpts devpts /dev/pts 2>/dev/null || true
+mount -t tmpfs -o mode=755,nodev,nosuid tmpfs /run 2>/dev/null || true
+mount -t tmpfs tmpfs /tmp 2>/dev/null || true
+mount -t cgroup2 -o nsdelegate cgroup2 /sys/fs/cgroup 2>/dev/null || \
+    mount -t cgroup2 cgroup2 /sys/fs/cgroup 2>/dev/null || true
+echo 'cerro-fedora: exec systemd' >/dev/kmsg 2>/dev/null || true
+exec /usr/lib/systemd/systemd --system
