@@ -142,19 +142,21 @@ ShellRoot {
             mask: Region {}
 
             Image {
+                id: wallpaperImage
                 anchors.fill: parent
                 source: root.wallpaperUrl
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
             }
-            RipplePool {
-                id: ripplePool
+            WaterRipple {
+                id: waterRipple
                 anchors.fill: parent
-                z: 2
+                wallpaper: wallpaperImage
+                diagnostic: Quickshell.env("CERRO_RIPPLE_SOCKET") !== ""
             }
             Connections {
                 target: root
-                function onTouchRipple(x, y) { ripplePool.splash(x, y); }
+                function onTouchRipple(x, y) { waterRipple.splash(x, y); }
             }
 
             Item {

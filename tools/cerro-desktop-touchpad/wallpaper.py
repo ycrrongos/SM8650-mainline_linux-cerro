@@ -23,14 +23,14 @@ def main():
         if not candidate.is_file():
             continue
         stat = candidate.stat()
-        key = hashlib.sha256(f"{candidate.resolve()}:{stat.st_mtime_ns}:v1".encode()).hexdigest()[:16]
+        key = hashlib.sha256(f"{candidate.resolve()}:{stat.st_mtime_ns}:v2".encode()).hexdigest()[:16]
         target = cache / f"wallpaper-{key}.jpg"
         if not target.exists():
             cache.mkdir(parents=True, exist_ok=True)
             try:
                 with Image.open(candidate) as original:
                     image = ImageOps.fit(ImageOps.exif_transpose(original).convert("RGB"), (800, 360))
-                image = ImageEnhance.Brightness(image.filter(ImageFilter.GaussianBlur(14))).enhance(0.36)
+                image = ImageEnhance.Brightness(image.filter(ImageFilter.GaussianBlur(3.5))).enhance(0.36)
                 with NamedTemporaryFile(dir=cache, delete=False) as file:
                     temporary = Path(file.name)
                     image.save(file, format="JPEG", quality=83)
