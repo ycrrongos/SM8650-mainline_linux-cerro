@@ -25,3 +25,13 @@ The builder keeps the v2 boot header, 127-byte stub ramdisk, DTB and all bytes o
 After the Fedora root and matching boot have been installed and read back, create `/cerro-boot-fedora-once` on the **outer** Linux filesystem. The initramfs consumes the marker before trying Fedora, so a later forced restart returns to Debian. Confirm the active slot and preserve the inactive Android boot/dtbo cache. Observe the complete boot, USB/SSH and desktop; do not mark Fedora complete from a systemd service or an empty error log.
 
 FEX requires a 4 KiB page kernel and `CONFIG_BINFMT_MISC=y` for transparent x86 program launch. Fedora's `x86-emulation` group alone does not install the FEX runtime/rootfs in the Fedora 45 container baseline; install the signed FEX packages and test an actual x86 program.
+
+## SMS on KDE
+
+Fedora provides Plasma Mobile's Spacebar as the `spacebar` package. Install it
+with `dnf install spacebar` and open **Spacebar** from the launcher. Its daemon
+starts through the packaged desktop autostart entry. For the current session
+it can also be started as the logged-in user with `/usr/libexec/spacebar-daemon`.
+Spacebar uses the modem and message storage exported by ModemManager. The
+separate **SIM 与短信** app provides Cerro's physical SIM selection for data and
+direct per-card SMS access.

@@ -408,7 +408,7 @@
     "tools/cerro-dualboot/linux/switch-to-android.sh": "df8e91ea043fe70be743cbbba5dcd76fed4e409f07a26696bb18f4b95c7c05c5",
     "tools/cerro-dualboot/linux/switch-to-linux-variant.sh": "15fd2c077c240ca4bdd33e3b56652ca0a291bfbc31d75321fbbd7b40a97e8c3e",
     "tools/cerro-dualboot/recovery/do-repartition.sh": "15831e77b3d0912b8a1a3bd4a55dbc2ed68b7b60dfda20cb2f7bceb304b5576a",
-    "tools/cerro-fedora/README.md": "656dfd7d2727491c75ab36c8434828aa58710f4a287e2be954842153cd87b530",
+    "tools/cerro-fedora/README.md": "f56d8f7b072d610f01cdf564761152c21faa62a20af731d5009d857176b40230",
     "tools/cerro-fedora/cellular/0001-mm-netlink-keep-completion-callback.patch": "f7de70958ece30985f49a97fbfaca498c5bc97adb3a333f0c90fe043fdd2245e",
     "tools/cerro-fedora/cellular/build-modemmanager.sh": "7f3fbbadb7cf3bc413aafd722b8bec13d9c5d97d142f8109ab07b7bcca38ffd7",
     "tools/cerro-fedora/cellular/cerro-cellular-prepare.service": "e41b92f6a53556ce79e775e4c811fe545d611c55c25c51f90063ec879513b18c",
