@@ -406,6 +406,8 @@
     "tools/cerro-dualboot/linux/switch-to-linux-variant.sh": "15fd2c077c240ca4bdd33e3b56652ca0a291bfbc31d75321fbbd7b40a97e8c3e",
     "tools/cerro-dualboot/recovery/do-repartition.sh": "15831e77b3d0912b8a1a3bd4a55dbc2ed68b7b60dfda20cb2f7bceb304b5576a",
     "tools/cerro-fedora/README.md": "656dfd7d2727491c75ab36c8434828aa58710f4a287e2be954842153cd87b530",
+    "tools/cerro-fedora/cellular/cerro-rf-before-rmtfs.conf": "ded6e64562e562a6f2b3269a2608cc482f9f00769d7b7e177c194298afc08eb6",
+    "tools/cerro-fedora/cellular/cerro-rf-provider.conf": "a42b751e89b3aac0d6dd5a03027d754c527e7f0a83e99155eaee7fe0af6f24ac",
     "tools/cerro-fedora/cerro-sd-prep": "91b6b420ed246bb29663908e8a7410007c452ae3fb5ccac4b1ecc0375b09a333",
     "tools/cerro-fedora/make-one-shot-boot.py": "d5510ec52b366f68585675e7af6ed7d29525753b37465a90323c6f90300428f8",
     "tools/cerro-fedora/one-shot-selector.sh": "994ded88b6b50d4aed80b94651d751fc121e89bd0f2583a012219009131c4898",
