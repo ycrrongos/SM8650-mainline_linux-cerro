@@ -1,0 +1,11 @@
+[Unit]
+Description=Cerro Fedora modem: initialize present USIM sessions before ModemManager
+Requires=rmtfs.service
+After=rmtfs.service tqftpserv.service
+Before=ModemManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cerro-cellular-prepare.sh
+TimeoutStartSec=210
+RemainAfterExit=yes

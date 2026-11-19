@@ -408,6 +408,8 @@
     "tools/cerro-fedora/README.md": "656dfd7d2727491c75ab36c8434828aa58710f4a287e2be954842153cd87b530",
     "tools/cerro-fedora/cellular/0001-mm-netlink-keep-completion-callback.patch": "f7de70958ece30985f49a97fbfaca498c5bc97adb3a333f0c90fe043fdd2245e",
     "tools/cerro-fedora/cellular/build-modemmanager.sh": "7f3fbbadb7cf3bc413aafd722b8bec13d9c5d97d142f8109ab07b7bcca38ffd7",
+    "tools/cerro-fedora/cellular/cerro-cellular-prepare.service": "e41b92f6a53556ce79e775e4c811fe545d611c55c25c51f90063ec879513b18c",
+    "tools/cerro-fedora/cellular/cerro-dual-usim-readiness.conf": "5bae89718dbaeebc74a19496165302dd508fa1c93d3089e1fdd6bf4ba1fd6bce",
     "tools/cerro-fedora/cellular/cerro-rf-before-rmtfs.conf": "ded6e64562e562a6f2b3269a2608cc482f9f00769d7b7e177c194298afc08eb6",
     "tools/cerro-fedora/cellular/cerro-rf-provider.conf": "a42b751e89b3aac0d6dd5a03027d754c527e7f0a83e99155eaee7fe0af6f24ac",
     "tools/cerro-fedora/cellular/install-modemmanager.sh": "ba02b1690f99bff4f88bcc9582e0313ae36625dd886646889f2a816c3e645c32",
