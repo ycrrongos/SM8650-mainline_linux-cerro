@@ -113,6 +113,63 @@ static void lease_finished(void *data, struct wp_drm_lease_v1 *lease)
 }
 static const struct wp_drm_lease_v1_listener lease_listener = {lease_granted, lease_finished};
 
+struct buffer {
+    struct drm_mode_create_dumb info;
+    uint32_t fb;
+    unsigned char *pixels;
+};
+
+static bool make_buffer(struct buffer *buf, const drmModeModeInfo *mode)
+{
+    buf->info.width = mode->hdisplay;
+    buf->info.height = mode->vdisplay;
+    buf->info.bpp = 32;
+    if (drmIoctl(lease_fd, DRM_IOCTL_MODE_CREATE_DUMB, &buf->info) < 0)
+        return false;
+    struct drm_mode_map_dumb map = {.handle = buf->info.handle};
+    if (drmModeAddFB(lease_fd, buf->info.width, buf->info.height, 24, 32,
+                     buf->info.pitch, buf->info.handle, &buf->fb) < 0 ||
+        drmIoctl(lease_fd, DRM_IOCTL_MODE_MAP_DUMB, &map) < 0)
+        return false;
+    void *pixels = mmap(NULL, buf->info.size, PROT_READ | PROT_WRITE,
+                        MAP_SHARED, lease_fd, map.offset);
+    if (pixels == MAP_FAILED)
+        return false;
+    buf->pixels = pixels;
+    return true;
+}
+
+static bool paint(struct buffer *buf, const char *image)
+{
+    cairo_surface_t *frame = cairo_image_surface_create_from_png(image);
+    bool valid = cairo_surface_status(frame) == CAIRO_STATUS_SUCCESS;
+    if (valid) {
+        cairo_surface_t *surface = cairo_image_surface_create_for_data(
+            buf->pixels, CAIRO_FORMAT_RGB24, buf->info.width, buf->info.height,
+            buf->info.pitch);
+        cairo_t *cr = cairo_create(surface);
+        cairo_translate(cr, 0, buf->info.height);
+        cairo_rotate(cr, -1.5707963267948966);
+        cairo_scale(cr, (double)buf->info.height / cairo_image_surface_get_width(frame),
+                    (double)buf->info.width / cairo_image_surface_get_height(frame));
+        cairo_set_source_surface(cr, frame, 0, 0);
+        cairo_paint(cr);
+        valid = cairo_status(cr) == CAIRO_STATUS_SUCCESS;
+        cairo_destroy(cr);
+        cairo_surface_flush(surface);
+        cairo_surface_destroy(surface);
+    }
+    cairo_surface_destroy(frame);
+    return valid;
+}
+
+static void flipped(int fd, unsigned int frame, unsigned int seconds,
+                    unsigned int useconds, void *data)
+{
+    (void)fd; (void)frame; (void)seconds; (void)useconds;
+    *(bool *)data = false;
+}
+
 static int scanout(const char *image, const char *ready_path, struct wl_display *display)
 {
     drmModeRes *res = drmModeGetResources(lease_fd);
@@ -128,71 +185,73 @@ static int scanout(const char *image, const char *ready_path, struct wl_display 
             break;
         }
 
-    struct drm_mode_create_dumb buffer = {
-        .width = mode.hdisplay, .height = mode.vdisplay, .bpp = 32
-    };
-    if (drmIoctl(lease_fd, DRM_IOCTL_MODE_CREATE_DUMB, &buffer) < 0) {
-        perror("CREATE_DUMB");
-        return 1;
+    uint32_t crtc = res->crtcs[0];
+    drmModeFreeConnector(conn);
+    drmModeFreeResources(res);
+    int result = 1;
+    struct buffer buffers[2] = {0};
+    if (!make_buffer(&buffers[0], &mode) || !make_buffer(&buffers[1], &mode)) {
+        perror("prepare framebuffers");
+        goto cleanup;
     }
-    uint32_t fb;
-    struct drm_mode_map_dumb map = {.handle = buffer.handle};
-    if (drmModeAddFB(lease_fd, buffer.width, buffer.height, 24, 32, buffer.pitch,
-                     buffer.handle, &fb) < 0 ||
-        drmIoctl(lease_fd, DRM_IOCTL_MODE_MAP_DUMB, &map) < 0) {
-        perror("prepare framebuffer");
-        return 1;
+    if (!paint(&buffers[0], image)) {
+        fprintf(stderr, "Could not paint the initial dashboard frame\n");
+        goto cleanup;
     }
-    unsigned char *pixels = mmap(NULL, buffer.size, PROT_READ | PROT_WRITE,
-                                 MAP_SHARED, lease_fd, map.offset);
-    if (pixels == MAP_FAILED) {
-        perror("mmap framebuffer");
-        return 1;
-    }
-    memset(pixels, 0, buffer.size);
-    int rc = drmModeSetCrtc(lease_fd, res->crtcs[0], fb, 0, 0, &panel_id, 1, &mode);
-    if (rc < 0) {
+    if (drmModeSetCrtc(lease_fd, crtc, buffers[0].fb, 0, 0, &panel_id, 1, &mode) < 0) {
         perror("DRM lease modeset");
-        return 1;
+        goto cleanup;
     }
-
-    cairo_surface_t *surface = cairo_image_surface_create_for_data(
-        pixels, CAIRO_FORMAT_RGB24, buffer.width, buffer.height, buffer.pitch);
-    cairo_t *cr = cairo_create(surface);
-    fprintf(stderr, "DSI lease modeset: %ux%u\n", buffer.width, buffer.height);
+    fprintf(stderr, "DSI lease modeset: %ux%u\n", buffers[0].info.width, buffers[0].info.height);
     FILE *ready = fopen(ready_path, "w");
     if (!ready) {
         perror("dashboard readiness file");
-        return 1;
+        goto cleanup;
     }
     fclose(ready);
+    drmEventContext events = {.version = 2, .page_flip_handler = flipped};
+    bool pending = false;
+    int front = 0;
     while (!withdrawn) {
-        cairo_surface_t *frame = cairo_image_surface_create_from_png(image);
-        if (cairo_surface_status(frame) == CAIRO_STATUS_SUCCESS) {
-            cairo_save(cr);
-            /* The portrait panel is used counterclockwise in touchpad mode. */
-            cairo_translate(cr, 0, buffer.height);
-            cairo_rotate(cr, -1.5707963267948966);
-            cairo_scale(cr, (double)buffer.height / cairo_image_surface_get_width(frame),
-                        (double)buffer.width / cairo_image_surface_get_height(frame));
-            cairo_set_source_surface(cr, frame, 0, 0);
-            cairo_paint(cr);
-            cairo_restore(cr);
-            cairo_surface_flush(surface);
+        struct pollfd fds[] = {
+            {.fd = wl_display_get_fd(display), .events = POLLIN},
+            {.fd = lease_fd, .events = POLLIN},
+        };
+        int count = poll(fds, 2, pending ? 500 : 62);
+        if (count < 0) {
+            if (errno == EINTR)
+                continue;
+            goto cleanup;
         }
-        cairo_surface_destroy(frame);
-        struct pollfd pfd = {.fd = wl_display_get_fd(display), .events = POLLIN};
-        int ready = poll(&pfd, 1, 42);
-        if ((ready < 0 && errno != EINTR) ||
-            (ready > 0 && wl_display_dispatch(display) < 0))
+        if (fds[0].revents && wl_display_dispatch(display) < 0)
             break;
+        if (withdrawn)
+            break;
+        if (fds[1].revents & (POLLERR | POLLHUP | POLLNVAL))
+            goto cleanup;
+        if ((fds[1].revents & POLLIN) && drmHandleEvent(lease_fd, &events) < 0)
+            goto cleanup;
+        if (!count && pending) {
+            fprintf(stderr, "DSI page flip timed out\n");
+            goto cleanup;
+        }
+        if (!count && paint(&buffers[1 - front], image)) {
+            if (drmModePageFlip(lease_fd, crtc, buffers[1 - front].fb,
+                                DRM_MODE_PAGE_FLIP_EVENT, &pending) < 0) {
+                perror("DSI page flip");
+                goto cleanup;
+            }
+            pending = true;
+            front = 1 - front;
+        }
     }
-    cairo_destroy(cr);
-    cairo_surface_destroy(surface);
-    munmap(pixels, buffer.size);
-    drmModeFreeConnector(conn);
-    drmModeFreeResources(res);
-    return 0;
+    result = 0;
+cleanup:
+    for (size_t i = 0; i < 2; ++i)
+        if (buffers[i].pixels)
+            munmap(buffers[i].pixels, buffers[i].info.size);
+    /* Closing the lease fd releases its GEM handles and framebuffer IDs. */
+    return result;
 }
 
 int main(int argc, char **argv)
