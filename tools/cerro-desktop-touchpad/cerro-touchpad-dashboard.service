@@ -1,0 +1,9 @@
+[Unit]
+Description=Cerro external display touchpad dashboard
+PartOf=graphical-session.target
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 %h/.local/src/cerro-dsi/client/layer-mode.py --relay
+KillMode=mixed
+TimeoutStopSec=8

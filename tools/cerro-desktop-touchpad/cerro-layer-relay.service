@@ -1,0 +1,11 @@
+[Unit]
+Description=Cerro touchpad input for the active dashboard
+ConditionPathExists=/dev/input/by-path/platform-a90000.spi-cs-0-event
+
+[Service]
+Type=exec
+ExecStartPre=/usr/sbin/modprobe uinput
+ExecStart=/usr/bin/python3 /usr/local/libexec/cerro-touchpad/relay.py /dev/input/by-path/platform-a90000.spi-cs-0-event --heartbeat /run/user/1000/cerro-layer-ready
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only

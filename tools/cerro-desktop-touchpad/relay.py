@@ -3,6 +3,7 @@
 import argparse
 import errno
 import select
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -82,8 +83,10 @@ class Touchpad:
         output.syn()
         self.active = {slot: contact.tracking_id for slot, contact in ready.items()}
 
-    def relay(self, source, output, connector):
+    def relay(self, source, output, connector, heartbeat):
         while connector.read_text().strip() == "connected":
+            if heartbeat is not None and not fresh(heartbeat):
+                return
             if not select.select([source.fd], [], [], 0.25)[0]:
                 continue
             try:
@@ -115,13 +118,23 @@ class Touchpad:
                     contact.y = event.value
 
 
+def fresh(path):
+    try:
+        return 0 <= time.time() - path.stat().st_mtime < 3
+    except FileNotFoundError:
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("device", type=Path)
     parser.add_argument("--rotate", type=int, choices=(0, 90, 180, 270), default=90)
     parser.add_argument("--connector", type=Path,
                         default=Path("/sys/class/drm/card0-DP-1/status"))
+    parser.add_argument("--heartbeat", type=Path)
     args = parser.parse_args()
+    if args.heartbeat is not None and not fresh(args.heartbeat):
+        parser.error("Dashboard heartbeat is missing or stale")
     if args.connector.read_text().strip() != "connected":
         parser.error("Connect an external display before enabling the relay")
     source = InputDevice(str(args.device))
@@ -133,7 +146,7 @@ def main():
         with UInput(touchpad.capabilities, name=NAME, bustype=E.BUS_VIRTUAL,
                     input_props=[E.INPUT_PROP_POINTER, E.INPUT_PROP_BUTTONPAD]) as output:
             with source.grab_context():
-                touchpad.relay(source, output, args.connector)
+                touchpad.relay(source, output, args.connector, args.heartbeat)
     finally:
         source.close()
 
