@@ -421,7 +421,7 @@
     "tools/cerro-fedora/one-shot-selector.sh": "994ded88b6b50d4aed80b94651d751fc121e89bd0f2583a012219009131c4898",
     "tools/cerro-fedora/pack-zram-bundle.py": "7d0a786dbb26709c612938acbf9bcb3fbb96b098c98294a8f43eae0603dc3d6e",
     "tools/cerro-fedora/persistent-selector.sh": "e50be665d444bf5b1783bc1535b174df4785c3666ce4387ed91f9ee2b7b467fb",
-    "tools/cerro-fedora/ucm/HiFi.conf": "2e912b84a650df5cd38d3341340ecd2f10e5bc13458e5718c9279f23ccfe9927",
+    "tools/cerro-fedora/ucm/HiFi.conf": "0644fbfb5850d9a15e58b9b071aa76dea7c54a258aaf4daea23d53f2bccb1e8a",
     "tools/cerro-fix-lib-symlink.sh": "b16fd08c09baaf527fafbce7d6516080228bcbb4f1ca3d7eeec34df4004fc9b7",
     "tools/cerro-init/README.md": "ec78510d250938cf7c5e748343527d107f77f0035d2f512dd48923e338a555ff",
     "tools/cerro-init/early-drm.sh": "783c6e6dd045d903175a6a6538b2af4882ef561e4298ad2c81f43e8bc61e7d28",
