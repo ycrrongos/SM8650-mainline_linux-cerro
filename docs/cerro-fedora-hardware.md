@@ -23,3 +23,20 @@ a normal user. This test did not assess picture quality.
 
 Zram and zsmalloc require a matching kernel built with that configuration.
 A standalone zsmalloc module cannot add the missing kernel zone-stat counter.
+
+## Native microphone and duplex
+
+Install the verified TX AMIC topology from the maintained Cerro audio build
+as a firmware override at
+`/usr/lib/firmware/updates/qcom/sm8650/SM8650-CERRO-tplg.bin`.
+The original embedded topology remains the fallback. After reboot verify
+the `MultiMedia2 Mixer TX_CODEC_DMA_TX_3` control exists before installing
+the Fedora HiFi profile under `/usr/share/alsa/ucm2/Qualcomm/sm8650/CERRO/`.
+
+The microphone route belongs in the HiFi verb enable sequence because
+PipeWire ACP probes the capture PCM before enabling individual UCM devices.
+Fedora was tested with a simultaneous speaker playback stream and microphone
+capture stream. Both hardware PCMs ran and the capture had nonzero samples.
+
+A separate boot after installing both camera and interconnect changes showed
+the camera service completing its first probe and all four cpufreq policies.
