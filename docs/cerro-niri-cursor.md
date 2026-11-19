@@ -15,5 +15,5 @@ debug {
 
 Run `niri validate` before deploying. Hot reload was observed on Niri 26.04:
 the dedicated plane was detached, both display connectors stayed active,
-and the touchpad and dashboard services stayed up. Visual confirmation is
-pending. Restore the previous Niri config to reverse it.
+and the touchpad and dashboard services stayed up. The user confirmed the
+pointer was visible on the external display and movement was normal. Restore the previous Niri config to reverse it.
