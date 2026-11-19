@@ -29,6 +29,11 @@ sudo apt-get install python3-gi gir1.2-gtk-3.0 pkexec
 sudo sh install-linux.sh
 ```
 
+Fedora 需要 `gtk3`、`python3-gobject` 和 `polkit`。只安装切换入口时运行
+`sudo sh install-linux.sh --switch-only`。后端识别 Cerro ext4 中带标记的
+`fedora-kde-root`，并验证它与分区标签指向同一块设备。Fedora 使用自己根目录里的
+互切清单，首次安装时导入与现场 Android 缓存 SHA 一致的电脑清单。
+
 打开“系统切换”，点击预览计划，再确认切换到Android。
 root后端检查同一设备/活动槽/Linux根FS UUID和缓存两文件SHA，备份当前现场，
 从非活动槽恢复boot/dtbo到**同一个活动槽**，读回通过后重启。

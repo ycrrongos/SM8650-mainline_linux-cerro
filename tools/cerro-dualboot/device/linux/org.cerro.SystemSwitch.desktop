@@ -7,6 +7,6 @@ Comment[en]=Restore Android boot and dtbo on the current active slot
 Exec=/usr/local/bin/cerro-system-switch
 Icon=system-reboot
 Terminal=false
-Categories=System;Settings;
+Categories=System;
 Keywords=android;linux;dualboot;cerro;
 StartupNotify=true

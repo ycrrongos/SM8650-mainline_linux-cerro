@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Install files only. Does not launch the GUI/backend or write partitions.
 set -eu
+case "${1:-}" in
+ ''|--switch-only) ;;
+ *) printf '%s\n' 'Usage: install-linux.sh [--switch-only]' >&2; exit 2 ;;
+esac
 base=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 root=${DESTDIR:-}
 prefix=$root/usr/local
@@ -14,5 +18,7 @@ cat > "$prefix/bin/cerro-system-switch" <<'EOF'
 exec python3 /usr/local/libexec/cerro-switch/system-switch.py "$@"
 EOF
 chmod 755 "$prefix/bin/cerro-system-switch"
-sh "$base/install-desktop-success.sh"
-printf '%s\n' '应用文件已安装；没有启动应用、测试切换或改写分区。需要 python3-gi、gir1.2-gtk-3.0、pkexec。'
+if [ "${1:-}" != --switch-only ]; then
+ sh "$base/install-desktop-success.sh"
+fi
+printf '%s\n' '系统切换入口已安装。打开应用可以预览并核对 Android 恢复计划。'

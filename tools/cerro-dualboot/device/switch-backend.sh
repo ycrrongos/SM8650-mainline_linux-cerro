@@ -76,8 +76,13 @@ connect_state() {
   STATE=$LIVE_ROOT/var/lib/cerro-dualboot-device
  else
   # Verify this is the mounted Linux rootfs, not a different host or chroot.
-  rootdev=$(awk '$2=="/" {print $1}' /proc/mounts | head -n1)
-  [ "$(readlink -f "$rootdev")" = "$(readlink -f "$ROOT_PART")" ] || fail '当前根分区不是 cerro_linux'
+  root_id=$(lsblk -dn -o MAJ:MIN "$ROOT_PART") || fail '无法确认 cerro_linux 设备号'
+  [ -n "$root_id" ] && [ "$(findmnt -n -o MAJ:MIN --target /)" = "$root_id" ] || fail '当前根分区不是 cerro_linux'
+  case "$(findmnt -n -o FSROOT --target /)" in
+   /|/debian-root) ;;
+   /fedora-kde-root) [ -f /.cerro-native-fedora ] || fail 'Fedora 根目录缺少 Cerro 标记';;
+   *) fail '当前不是受支持的 Cerro 根目录';;
+  esac
   STATE=/var/lib/cerro-dualboot-device
  fi
  [ ! -L "$STATE" ] || fail '状态目录不能是符号链接'
