@@ -57,49 +57,6 @@ ShellRoot {
         }
     }
 
-    component NeonCard: Rectangle {
-        property color edge: root.blue
-        radius: 17
-        border.width: 1
-        border.color: edge
-        gradient: Gradient {
-            GradientStop { position: 0; color: "#272444" }
-            GradientStop { position: 1; color: "#121225" }
-        }
-        Canvas {
-            anchors.fill: parent
-            anchors.margins: 12
-            opacity: 0.17
-            onWidthChanged: requestPaint()
-            onHeightChanged: requestPaint()
-            onPaint: {
-                const ctx = getContext("2d");
-                ctx.clearRect(0, 0, width, height);
-                const colors = ["#7a91be", "#996baf", "#77a7a6"];
-                for (let i = 0; i < 13; i++) {
-                    const x = width * (0.04 + i * 0.073);
-                    const y = height * (0.12 + ((i * 7) % 11) * 0.05);
-                    const end = i % 2 === 0 ? 0 : height;
-                    ctx.strokeStyle = colors[i % colors.length];
-                    ctx.beginPath();
-                    ctx.moveTo(x, end);
-                    ctx.lineTo(x, y);
-                    ctx.lineTo(x + width * 0.048, y);
-                    ctx.lineTo(x + width * 0.048, y + height * 0.13);
-                    ctx.stroke();
-                }
-            }
-        }
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: 4
-            radius: parent.radius - 4
-            border.width: 1
-            border.color: "#223f548b"
-            color: "transparent"
-        }
-    }
-
     component PanelText: Text {
         color: root.ink
         font.family: "Noto Sans Mono"
@@ -189,7 +146,7 @@ ShellRoot {
                 SequentialAnimation {
                     id: transition
                     ParallelAnimation {
-                        NumberAnimation { target: card; property: "opacity"; to: 0; duration: 210; easing.type: Easing.InCubic }
+                        NumberAnimation { target: pageContent; property: "opacity"; to: 0; duration: 210; easing.type: Easing.InCubic }
                         NumberAnimation { target: composition; property: "dx"; to: composition.effect === 0 ? -48 : 0; duration: 210; easing.type: Easing.InCubic }
                         NumberAnimation { target: composition; property: "dy"; to: composition.effect === 1 ? 32 : 0; duration: 210; easing.type: Easing.InCubic }
                         NumberAnimation { target: composition; property: "zoom"; to: composition.effect === 2 ? 0.84 : 1; duration: 210; easing.type: Easing.InCubic }
@@ -204,11 +161,12 @@ ShellRoot {
                             composition.dy *= -1;
                             composition.tilt *= -1;
                             if (composition.diagnostic)
-                                console.info("Cerro carousel", composition.page, composition.effect, "spectrum", root.sound);
+                                console.info("Cerro carousel", composition.page, composition.effect,
+                                    "spectrum", root.sound, "shift", composition.shiftX, composition.shiftY);
                         }
                     }
                     ParallelAnimation {
-                        NumberAnimation { target: card; property: "opacity"; to: 1; duration: 440; easing.type: Easing.OutCubic }
+                        NumberAnimation { target: pageContent; property: "opacity"; to: 1; duration: 440; easing.type: Easing.OutCubic }
                         NumberAnimation { target: composition; property: "dx"; to: 0; duration: 520; easing.type: Easing.OutQuint }
                         NumberAnimation { target: composition; property: "dy"; to: 0; duration: 520; easing.type: Easing.OutQuint }
                         NumberAnimation { target: composition; property: "zoom"; to: 1; duration: 520; easing.type: Easing.OutBack }
@@ -216,18 +174,16 @@ ShellRoot {
                     }
                 }
 
-                NeonCard {
-                    id: card
-                    width: Math.min(parent.width * 0.78, 540)
-                    height: Math.min(parent.height * (root.sound ? 0.50 : 0.63), 230)
+                Item {
+                    id: pageContent
+                    width: parent.width - 108
+                    height: parent.height * (root.sound ? 0.58 : 0.84)
                     anchors.centerIn: parent
                     anchors.horizontalCenterOffset: composition.shiftX + composition.dx
                     anchors.verticalCenterOffset: composition.shiftY + composition.dy - (root.sound ? parent.height * 0.12 : 0)
                     scale: composition.zoom
                     rotation: composition.tilt
-                    edge: [root.blue, root.violet, root.mint][composition.page]
                     Behavior on height { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-                    Behavior on edge { ColorAnimation { duration: 440 } }
 
                     Loader {
                         anchors.fill: parent
@@ -236,16 +192,15 @@ ShellRoot {
                     }
                 }
 
-                NeonCard {
+                Item {
                     id: spectrum
                     visible: root.sound
-                    width: Math.min(parent.width * 0.75, 630)
-                    height: Math.min(parent.height * 0.21, 100)
+                    width: parent.width - 108
+                    height: parent.height * 0.24
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.horizontalCenterOffset: -composition.shiftX
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 22 + composition.shiftY * 0.25
-                    edge: root.violet
 
                     Row {
                         id: bars
@@ -292,7 +247,7 @@ ShellRoot {
                         delegate: Digit {
                             required property string modelData
                             value: modelData
-                            height: Math.min(95, 0.60 * clockContainer.height)
+                            height: Math.min(clockContainer.width * 0.31, clockContainer.height * 0.65)
                         }
                     }
                 }
@@ -320,21 +275,20 @@ ShellRoot {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.preferredWidth: 1
-                    color: "#17182c"
-                    radius: 12
+                    color: "transparent"
                     Column {
                         anchors.centerIn: parent
                         spacing: 10
                         PanelText {
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: modelData[0]
-                            font.pixelSize: 27
+                            font.pixelSize: 38
                             color: modelData[2]
                         }
                         PanelText {
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: modelData[1]
-                            font.pixelSize: 18
+                            font.pixelSize: 30
                         }
                     }
                 }
@@ -349,14 +303,14 @@ ShellRoot {
             PanelText {
                 text: "♫"
                 color: root.mint
-                font.pixelSize: 36
+                font.pixelSize: 48
                 Layout.alignment: Qt.AlignHCenter
             }
             PanelText {
                 Layout.fillWidth: true
                 visible: text.length > 0
                 text: root.stats.title ?? ""
-                font.pixelSize: 28
+                font.pixelSize: 46
                 horizontalAlignment: Text.AlignHCenter
             }
             PanelText {

@@ -330,7 +330,7 @@
     "tools/cerro-desktop-touchpad/dashboard-frame.py": "da43ef3ff844ae390598a3e8dbe3e293491b0af001c70f8cb1568202041ec6a5",
     "tools/cerro-desktop-touchpad/layer-mode.py": "e349ad57998873f7b2d4998c76ccd9ad031963769c2ee5fbaf5e96f7df396816",
     "tools/cerro-desktop-touchpad/layer/README.md": "be713322734ad09dd2c8a72ee8905901e68cc41b0bb6a24dcdff762127c65dd4",
-    "tools/cerro-desktop-touchpad/layer/shell.qml": "e1bd4e3c6ce6fbc1fd1d66b54b470148f5b9799f6cdbbab1e9d6a5eafc87a0b3",
+    "tools/cerro-desktop-touchpad/layer/shell.qml": "0d207435435a02751d3f3b0bf311115d49fc7208b39688df0568f348b8c55134",
     "tools/cerro-desktop-touchpad/lease-panel.c": "fb2b705d148c5be437b7c95b01dc2e77861d218ff66a6df36ac788b513139d2d",
     "tools/cerro-desktop-touchpad/relay.py": "e4ce4e827107b4730c2f9effdb60deeee3ecf4e0c6c21f3ab66a6d3144008e02",
     "tools/cerro-desktop-touchpad/run-dashboard.py": "5e97066bd883f2e20eb68c3e68098df0c326f4c07100212bdb9490e977ed7029",
