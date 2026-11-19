@@ -38,6 +38,7 @@ def main():
     ap.add_argument('source_boot', type=Path)
     ap.add_argument('source_sha256', help='fresh readback digest, required')
     ap.add_argument('output_boot', type=Path)
+    ap.add_argument('--persistent', action='store_true', help='boot Fedora by default')
     args = ap.parse_args()
     source = args.source_boot.read_bytes()
     if hashlib.sha256(source).hexdigest() != args.source_sha256:
@@ -57,7 +58,10 @@ def main():
     needle = b'SWITCH_ROOT=/sysroot'
     if original.count(needle) != 1:
         raise ValueError('source init has unexpected root selection layout')
-    modified = original.rstrip(b'\n').replace(needle, SELECTOR + b'\n' + needle)
+    selector = SELECTOR
+    if args.persistent:
+        selector = (Path(__file__).parent / 'persistent-selector.sh').read_bytes()
+    modified = original.rstrip(b'\n').replace(needle, selector + b'\n' + needle)
     if len(modified) > data_size:
         raise ValueError('selector exceeds embedded init entry')
     modified += b'\n' * (data_size - len(modified))
