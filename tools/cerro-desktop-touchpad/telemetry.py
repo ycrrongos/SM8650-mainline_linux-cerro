@@ -8,7 +8,10 @@ from pathlib import Path
 
 
 def command(*args):
-    result = subprocess.run(args, capture_output=True, text=True, timeout=2)
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
@@ -31,7 +34,7 @@ def lyrics(title, artist, position):
     return lines[index][1] if index >= 0 else ""
 
 
-def main():
+def read_stats():
     mem = {}
     for line in Path("/proc/meminfo").read_text().splitlines():
         key, value = line.split(":", 1)
@@ -40,14 +43,14 @@ def main():
     title = command("playerctl", "metadata", "xesam:title")
     artist = command("playerctl", "metadata", "xesam:artist")
     position = float(command("playerctl", "position") or 0)
-    print(json.dumps({
+    return {
         "load": Path("/proc/loadavg").read_text().split()[0],
         "ram": round((mem["MemTotal"] - mem["MemAvailable"]) / 1048576, 1),
         "total": round(mem["MemTotal"] / 1048576, 1),
         "battery": battery.read_text().strip() if battery.exists() else "—",
         "title": title, "artist": artist, "lyric": lyrics(title, artist, position),
-    }))
+    }
 
 
 if __name__ == "__main__":
-    main()
+    print(json.dumps(read_stats()))

@@ -1,0 +1,156 @@
+diff --git a/niri-config/src/lib.rs b/niri-config/src/lib.rs
+index 329b766..6bcd122 100644
+--- a/niri-config/src/lib.rs
++++ b/niri-config/src/lib.rs
+@@ -1145,6 +1145,7 @@ mod tests {
+                 [
+                     Output {
+                         off: false,
++                        dashboard_lease: false,
+                         name: "eDP-1",
+                         scale: Some(
+                             FloatOrInt(
+@@ -1199,6 +1200,7 @@ mod tests {
+                     },
+                     Output {
+                         off: false,
++                        dashboard_lease: false,
+                         name: "eDP-2",
+                         scale: None,
+                         transform: Normal,
+@@ -1225,6 +1227,7 @@ mod tests {
+                     },
+                     Output {
+                         off: false,
++                        dashboard_lease: false,
+                         name: "eDP-3",
+                         scale: None,
+                         transform: Normal,
+diff --git a/niri-config/src/output.rs b/niri-config/src/output.rs
+index 5d6565f..35501b6 100644
+--- a/niri-config/src/output.rs
++++ b/niri-config/src/output.rs
+@@ -51,6 +51,8 @@ pub struct Modeline {
+ pub struct Output {
+     #[knuffel(child)]
+     pub off: bool,
++    #[knuffel(child)]
++    pub dashboard_lease: bool,
+     #[knuffel(argument)]
+     pub name: String,
+     #[knuffel(child, unwrap(argument))]
+@@ -96,6 +98,7 @@ impl Default for Output {
+     fn default() -> Self {
+         Self {
+             off: false,
++            dashboard_lease: false,
+             focus_at_startup: false,
+             name: String::new(),
+             scale: None,
+diff --git a/src/backend/tty.rs b/src/backend/tty.rs
+index 5368c7e..f8481f1 100644
+--- a/src/backend/tty.rs
++++ b/src/backend/tty.rs
+@@ -1227,6 +1227,22 @@ impl Tty {
+         }
+     }
+ 
++    fn wants_dashboard_lease(&self, device: &OutputDevice, name: &OutputName) -> bool {
++        let config = self.config.borrow();
++        name.connector == "DSI-1"
++            && config
++                .outputs
++                .find(name)
++                .is_some_and(|output| output.dashboard_lease && !output.off)
++            && device.surfaces.values().any(|surface| {
++                surface.name.connector.starts_with("DP-")
++                    && config
++                        .outputs
++                        .find(&surface.name)
++                        .is_none_or(|output| !output.off)
++            })
++    }
++
+     fn connector_connected(
+         &mut self,
+         niri: &mut Niri,
+@@ -1237,16 +1253,18 @@ impl Tty {
+         let connector_name = format_connector_name(&connector);
+         debug!("connecting connector: {connector_name}");
+ 
+-        let device = self.devices.get_mut(&node).context("missing device")?;
+-
++        let device = self.devices.get(&node).context("missing device")?;
+         let disable_monitor_names = self.config.borrow().debug.disable_monitor_names;
+         let output_name = device.known_crtc_name(&crtc, &connector, disable_monitor_names);
++        let dashboard =
++            self.wants_dashboard_lease(device, &output_name) && device.drm_lease_state.is_some();
++        let device = self.devices.get_mut(&node).unwrap();
+ 
+         let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
+             .and_then(|(_, info, value)| info.value_type().convert_value(value).as_boolean())
+             .unwrap_or(false);
+ 
+-        if non_desktop {
++        if non_desktop || dashboard {
+             debug!("output is non desktop");
+             let description = output_name.format_description();
+             if let Some(lease_state) = &mut device.drm_lease_state {
+@@ -1580,6 +1598,9 @@ impl Tty {
+                 if let Some(lease_state) = &mut device.drm_lease_state {
+                     lease_state.withdraw_connector(conn);
+                 }
++                device
++                    .active_leases
++                    .retain(|lease| !lease.connectors().any(|item| *item == conn));
+             } else {
+                 debug!("crtc wasn't enabled");
+             }
+@@ -2548,6 +2569,47 @@ impl Tty {
+             }
+         }
+ 
++        // Reconcile after the desktop surfaces have been updated, so a failed
++        // external modeset never triggers the internal-panel handoff.
++        let mut handoffs = Vec::new();
++        for (&node, device) in &self.devices {
++            if device.drm_lease_state.is_none() {
++                continue;
++            }
++            for (connector, crtc) in device.drm_scanner.crtcs() {
++                let name = device.known_crtc_name(
++                    &crtc,
++                    connector,
++                    self.config.borrow().debug.disable_monitor_names,
++                );
++                if name.connector != "DSI-1" {
++                    continue;
++                }
++                let wants = self.wants_dashboard_lease(device, &name);
++                let leased = device
++                    .non_desktop_connectors
++                    .contains(&(connector.handle(), crtc));
++                let desktop = device.surfaces.contains_key(&crtc);
++                if (wants && desktop) || (!wants && leased) {
++                    let off = self
++                        .config
++                        .borrow()
++                        .outputs
++                        .find(&name)
++                        .is_some_and(|output| output.off);
++                    handoffs.push((node, connector.clone(), crtc, off));
++                }
++            }
++        }
++        for (node, connector, crtc, off) in handoffs {
++            self.connector_disconnected(niri, node, crtc);
++            if !off {
++                if let Err(err) = self.connector_connected(niri, node, connector, crtc) {
++                    warn!("dashboard connector handoff failed: {err:?}");
++                }
++            }
++        }
++
+         self.refresh_ipc_outputs(niri);
+     }
+ 
