@@ -11,6 +11,8 @@ ShellRoot {
     property var bands: []
     property date now: new Date()
     property bool sound: false
+    property string wallpaperUrl: ""
+    signal touchRipple(real x, real y)
     property double lastSound: 0
     readonly property int dwell: Math.max(2000, Number(Quickshell.env("CERRO_CAROUSEL_MS")) || 12000)
     readonly property color ink: "#c4c9e8"
@@ -53,6 +55,28 @@ ShellRoot {
                 if (values.some(value => value >= 4))
                     root.lastSound = Date.now();
                 root.sound = Date.now() - root.lastSound < 850;
+            }
+        }
+    }
+
+    Process {
+        running: true
+        command: ["python3", Quickshell.shellPath("../wallpaper.py")]
+        stdout: SplitParser {
+            onRead: line => { if (line.trim()) root.wallpaperUrl = line.trim(); }
+        }
+    }
+    Process {
+        running: true
+        command: ["python3", Quickshell.shellPath("../ripple-stream.py")]
+        stdout: SplitParser {
+            onRead: line => {
+                const point = line.trim().split(" ").map(Number);
+                if (point.length === 2 && point.every(Number.isFinite)) {
+                    root.touchRipple(point[0], point[1]);
+                    if (Quickshell.env("CERRO_RIPPLE_SOCKET") !== "")
+                        console.info("Cerro ripple sample accepted");
+                }
             }
         }
     }
@@ -117,6 +141,22 @@ ShellRoot {
             color: "#080813"
             mask: Region {}
 
+            Image {
+                anchors.fill: parent
+                source: root.wallpaperUrl
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+            }
+            RipplePool {
+                id: ripplePool
+                anchors.fill: parent
+                z: 2
+            }
+            Connections {
+                target: root
+                function onTouchRipple(x, y) { ripplePool.splash(x, y); }
+            }
+
             Item {
                 id: composition
                 anchors.fill: parent
@@ -154,7 +194,7 @@ ShellRoot {
                     }
                     ScriptAction {
                         script: {
-                            composition.page = (composition.page + 1) % 3;
+                            composition.page = (composition.page + 1) % 4;
                             composition.shiftX = Math.random() * 52 - 26;
                             composition.shiftY = Math.random() * 36 - 18;
                             composition.dx *= -1;
@@ -188,7 +228,7 @@ ShellRoot {
                     Loader {
                         anchors.fill: parent
                         anchors.margins: 16
-                        sourceComponent: [clockPage, hardwarePage, musicPage][composition.page]
+                        sourceComponent: [clockPage, hardwarePage, musicPage, pipesPage][composition.page]
                     }
                 }
 
@@ -233,6 +273,10 @@ ShellRoot {
     }
 
     Component {
+        id: pipesPage
+        Pipes {}
+    }
+    Component {
         id: clockPage
         Item {
             id: clockContainer
@@ -243,11 +287,11 @@ ShellRoot {
                     anchors.horizontalCenter: parent.horizontalCenter
                     spacing: 9
                     Repeater {
-                        model: Qt.formatTime(root.now, "hh:mm").split("")
+                        model: Qt.formatTime(root.now, "hh:mm:ss").split("")
                         delegate: Digit {
                             required property string modelData
                             value: modelData
-                            height: Math.min(clockContainer.width * 0.31, clockContainer.height * 0.65)
+                            height: Math.min(clockContainer.width * 0.22, clockContainer.height * 0.65)
                         }
                     }
                 }

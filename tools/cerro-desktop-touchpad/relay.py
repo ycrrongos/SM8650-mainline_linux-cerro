@@ -3,6 +3,7 @@
 import argparse
 import errno
 import select
+import socket
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,9 +23,37 @@ class Contact:
     y: int | None = None
 
 
+class Ripple:
+    """Send only visual coordinates and never wait on the dashboard."""
+
+    def __init__(self, path):
+        self.path = str(path)
+        self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM | socket.SOCK_NONBLOCK)
+        self.last_time = 0
+        self.last_point = None
+
+    def update(self, point):
+        now = time.monotonic()
+        if point is None:
+            self.last_point = None
+            return
+        if self.last_point is not None:
+            dx = point[0] - self.last_point[0]
+            dy = point[1] - self.last_point[1]
+            if now - self.last_time < 0.055 or dx * dx + dy * dy < 0.00018:
+                return
+        self.last_point = point
+        self.last_time = now
+        try:
+            self.socket.sendto(f"{point[0]:.4f} {point[1]:.4f}".encode(), self.path)
+        except OSError:
+            pass
+
+
 class Touchpad:
-    def __init__(self, source, rotation):
+    def __init__(self, source, rotation, ripple=None):
         self.rotation = rotation
+        self.ripple = ripple
         self.bounds = {code: source.absinfo(code) for code in (X, Y)}
         slots = source.absinfo(E.ABS_MT_SLOT)
         if slots.min != 0 or slots.max < 2:
@@ -81,6 +110,8 @@ class Touchpad:
             output.write(E.EV_ABS, E.ABS_X, x)
             output.write(E.EV_ABS, E.ABS_Y, y)
         output.syn()
+        if self.ripple:
+            self.ripple.update((x / self.width, y / self.height) if ready else None)
         self.active = {slot: contact.tracking_id for slot, contact in ready.items()}
 
     def relay(self, source, output, connector, heartbeat):
@@ -132,6 +163,7 @@ def main():
     parser.add_argument("--connector", type=Path,
                         default=Path("/sys/class/drm/card0-DP-1/status"))
     parser.add_argument("--heartbeat", type=Path)
+    parser.add_argument("--ripple-socket", type=Path)
     args = parser.parse_args()
     if args.heartbeat is not None and not fresh(args.heartbeat):
         parser.error("Dashboard heartbeat is missing or stale")
@@ -142,7 +174,8 @@ def main():
         source.close()
         parser.error("Refusing to grab a device other than the Cerro touchscreen")
     try:
-        touchpad = Touchpad(source, args.rotate)
+        ripple = Ripple(args.ripple_socket) if args.ripple_socket else None
+        touchpad = Touchpad(source, args.rotate, ripple)
         with UInput(touchpad.capabilities, name=NAME, bustype=E.BUS_VIRTUAL,
                     input_props=[E.INPUT_PROP_POINTER, E.INPUT_PROP_BUTTONPAD]) as output:
             with source.grab_context():
