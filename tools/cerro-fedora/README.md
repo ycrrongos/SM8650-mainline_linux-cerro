@@ -35,3 +35,28 @@ it can also be started as the logged-in user with `/usr/libexec/spacebar-daemon`
 Spacebar uses the modem and message storage exported by ModemManager. The
 separate **SIM 与短信** app provides Cerro's physical SIM selection for data and
 direct per-card SMS access.
+
+## Rime Ice in Niri
+
+Install Fedora's `fcitx5`, `fcitx5-rime` and `librime-lua`. From a running
+Niri session, run the installer as the desktop user with a source archive from
+[iDvel/rime-ice](https://github.com/iDvel/rime-ice).
+
+```sh
+bash tools/cerro-fedora/install-niri-rime-ice.sh /path/to/rime-ice.tar.gz
+```
+
+Press **Ctrl+Space** in a text field to toggle Chinese input. Niri runs its
+own Fcitx5 instance and keeps its profile and dictionaries in
+`~/.config/cerro-niri-ime` and `~/.local/share/cerro-niri-ime`.
+The unit stops when Niri stops. Niri applies its input environment to
+newly spawned applications. When the Cerro Caelestia user service is
+installed, it picks up the same settings the next time it starts.
+Plasma uses its existing on-screen keyboard and input settings.
+
+To undo the change, stop `cerro-niri-fcitx5.service` in the user manager
+and remove the installed startup line and the marked input environment
+block from `~/.config/niri/config.kdl`. The installer preserves the
+original file as `config.kdl.before-rime-ice` for comparison. If present,
+remove `~/.config/systemd/user/caelestia-niri.service.d/cerro-input-method.conf`
+and run `systemctl --user daemon-reload`.
