@@ -18,10 +18,10 @@ if printf '%s\n' "$deps" | grep -q 'not found'; then
     exit 1
 fi
 vendor_release=$(rpm -q --qf '%{VERSION}-%{RELEASE}' ModemManager)
-"$candidate" --version | grep -Fx "ModemManager $vendor_release.cerro1"
+"$candidate" --version | grep -Fx "ModemManager $vendor_release.cerro2"
 
-base=/usr/local/libexec/cerro-mm-fedora
-conf=/etc/systemd/system/ModemManager.service.d/zz-cerro-primary-slot.conf
+base=/usr/local/libexec/cerro-mm-fedora-r2
+conf=/etc/systemd/system/ModemManager.service.d/zzz-cerro-primary-slot-r2.conf
 test ! -e "$conf"
 install -d "$base" "$(dirname "$conf")"
 install -m 0755 "$candidate" "$base/ModemManager"
