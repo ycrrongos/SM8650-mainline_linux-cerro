@@ -19,7 +19,7 @@ static struct wp_drm_lease_device_v1 *device;
 static struct wp_drm_lease_connector_v1 *panel;
 static uint32_t panel_id;
 static int lease_fd = -1;
-static bool done, withdrawn;
+static bool done, withdrawn, requested;
 
 static void connector_name(void *data, struct wp_drm_lease_connector_v1 *connector,
                            const char *name)
@@ -47,8 +47,13 @@ static void connector_done(void *data, struct wp_drm_lease_connector_v1 *connect
 static void connector_withdrawn(void *data, struct wp_drm_lease_connector_v1 *connector)
 {
     (void)data;
-    if (connector == panel)
-        withdrawn = true;
+    if (connector == panel) {
+        panel = NULL;
+        // A granted lease withdraws its connector from advertisements.
+        // Only lease.finished terminates an already submitted request.
+        if (!requested)
+            withdrawn = true;
+    }
     wp_drm_lease_connector_v1_destroy(connector);
 }
 static const struct wp_drm_lease_connector_v1_listener connector_listener = {
@@ -211,6 +216,7 @@ int main(int argc, char **argv)
     }
     struct wp_drm_lease_request_v1 *request = wp_drm_lease_device_v1_create_lease_request(device);
     wp_drm_lease_request_v1_request_connector(request, panel);
+    requested = true;
     struct wp_drm_lease_v1 *lease = wp_drm_lease_request_v1_submit(request);
     wp_drm_lease_v1_add_listener(lease, &lease_listener, NULL);
     while (lease_fd < 0 && !withdrawn)
