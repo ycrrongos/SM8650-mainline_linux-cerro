@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 REPO = 'ycrrongos/snapdragon-8gen3-linux'
 AUTHOR = 'ycrrongos'
 EMAIL = '124893015+ycrrongos@users.noreply.github.com'
-EXTENSIONS = {'.py','.sh','.c','.h','.cpp','.S','.patch','.dts','.dtsi','.fragment',
+EXTENSIONS = {'.qml','.py','.sh','.c','.h','.cpp','.S','.patch','.dts','.dtsi','.fragment',
               '.config','.service','.conf','.rules','.policy','.desktop','.md','.txt',
               '.json','.toml','.xml','.java','.pro','.in','.yaml','.yml','.mk','.rc','.bp','.fstab','.flags'}
 EXCLUDE_DIRS = {'out','bin','obj','gen','venv','.git','edl','nubia_sm8650_eng',
