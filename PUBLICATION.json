@@ -271,6 +271,8 @@
     "patches/usb-dp-observe-c1/cerro_dp_observe.c": "758df50250f3abb2d7669aeeda54afa94ae03f6b525ed6b440ea1dfe9660956b",
     "patches/usb-dp-usbss-c1/0001-cerro-add-wcd939x-usbss-sbu-route.patch": "27280979f6533beab6a2e469f8f2128e773eb50af9af003068703597691694ad",
     "patches/usb-dp-usbss-c1/README.md": "0b34c1a52ef21af9a344417c33cb6fd858c039393eaa4da348a239189845114f",
+    "patches/usb-qmp-resume-c1/0001-qmp-combo-keep-pipe-clock-owned.patch": "a19a024555680f31df199d22d44aa95cb6a795002950ddee1b0f3d8bc7368b94",
+    "patches/usb-qmp-resume-c1/README.md": "4f954458b27150c898774d6f747ce0a667b161e368673ed53bebb1c7bdc79260",
     "patches/waydroid-kernel-c1/README.md": "6697fc8095da03fb9473f89bb8d11f34a82b8b1a778a19fd47405ae5d6e61df1",
     "patches/waydroid-kernel-c1/android-check/AndroidManifest.xml": "7f8274a4438c69974a292471dcad4035e36510860bfd49660eba14beba700ca0",
     "patches/waydroid-kernel-c1/android-check/MainActivity.java": "fa8bcc01490944c92bebfd4a479519839443e78ca03af572c3f88ffb7bc8fc1d",
