@@ -419,7 +419,7 @@
     "tools/cerro-fedora/cerro-sd-prep": "91b6b420ed246bb29663908e8a7410007c452ae3fb5ccac4b1ecc0375b09a333",
     "tools/cerro-fedora/make-one-shot-boot.py": "d5510ec52b366f68585675e7af6ed7d29525753b37465a90323c6f90300428f8",
     "tools/cerro-fedora/one-shot-selector.sh": "994ded88b6b50d4aed80b94651d751fc121e89bd0f2583a012219009131c4898",
-    "tools/cerro-fedora/pack-zram-bundle.py": "a4c3a045f8e3bdc81dcf8858ca46c2ffa7a3fcc0d8352353ff61a075a15ccfa0",
+    "tools/cerro-fedora/pack-zram-bundle.py": "7d0a786dbb26709c612938acbf9bcb3fbb96b098c98294a8f43eae0603dc3d6e",
     "tools/cerro-fedora/persistent-selector.sh": "e50be665d444bf5b1783bc1535b174df4785c3666ce4387ed91f9ee2b7b467fb",
     "tools/cerro-fedora/ucm/HiFi.conf": "bf884d18aca24675ed1d48e9efc06cdaac787a1ebe562ae7d34479ad6cd1bc44",
     "tools/cerro-fix-lib-symlink.sh": "b16fd08c09baaf527fafbce7d6516080228bcbb4f1ca3d7eeec34df4004fc9b7",

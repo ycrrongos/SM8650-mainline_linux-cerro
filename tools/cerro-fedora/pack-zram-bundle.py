@@ -47,6 +47,8 @@ def prepare(filename):
         version = subprocess.check_output(["modinfo", "-F", "vermagic", source], text=True).split()[0]
         assert version == new_version, (source, version)
         subprocess.run(["llvm-strip", "--strip-debug", "-o", target, source], check=True)
+        if filename == "snd-soc-aw88261.ko" and b"aw88261_startup_work\x00" not in target.read_bytes():
+            raise ValueError("Build the Cerro AW88261 startup fix in patches/audio-s5fy before packaging")
     return target
 
 
