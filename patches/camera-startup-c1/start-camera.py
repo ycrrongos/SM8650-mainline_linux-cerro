@@ -58,7 +58,7 @@ def graph_ready():
         return False
     if not Path('/sys/bus/platform/devices/acb6000.isp/driver').exists():
         return False
-    for media in Path('/dev').glob('media*'):
+    for media in Path('/dev').glob('media[0-9]*'):
         topology = command(['/usr/bin/media-ctl', '-d', str(media), '-p'])
         if all(name in topology for name in ('imx800-cerro', 'ak7316-cerro', 'ov12d2q-cerro')):
             return True
