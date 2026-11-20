@@ -95,3 +95,10 @@ profile by ID obtained IPv6 and carried interface-bound HTTPS traffic.
 The normal NetworkManager profile still uses its automatic APN and may
 fall back to IPv4. Experimental profile selection did not reliably fix
 ordinary activation and was removed from the handset.
+
+In a subsequent warm test, ordinary APN-string requests and requests using
+the modem profile ID both passed IPv6 HTTPS. The very first connection
+after boot still saw a modem refusal. An immediate retry of the same
+IPv6 request also failed. Temporarily changing the initial attach to
+3GNET produced a global IPv6 address but no end-to-end IPv6 transfer.
+The original attach list and ModemManager r6 remain the supported baseline.
