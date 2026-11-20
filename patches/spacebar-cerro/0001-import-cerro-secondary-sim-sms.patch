@@ -1,0 +1,155 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 6ffe103..980e05c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -41,5 +41,5 @@ ecm_setup_version(${PROJECT_VERSION}
+
+ ################# Find dependencies #################
+-find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core Concurrent Gui Qml Quick QuickControls2 Widgets Sql)
++find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core Concurrent Network Gui Qml Quick QuickControls2 Widgets Sql)
+ find_package(KF6 ${KF6_MIN_VERSION} REQUIRED COMPONENTS Kirigami I18n Contacts People Notifications Config CoreAddons DBusAddons ModemManagerQt KIO WindowSystem Crash)
+ find_package(KF6KirigamiAddons 1.4 REQUIRED)
+diff --git a/daemon/CMakeLists.txt b/daemon/CMakeLists.txt
+index 6e4950b..72a8fbd 100644
+--- a/daemon/CMakeLists.txt
++++ b/daemon/CMakeLists.txt
+@@ -25,4 +25,5 @@ target_link_libraries(spacebar-daemon PRIVATE
+     Qt6::Concurrent
+     Qt6::Core
++    Qt6::Network
+     Qt6::Sql
+     Qt6::DBus
+diff --git a/daemon/channellogger.cpp b/daemon/channellogger.cpp
+index 0667139..24a9126 100644
+--- a/daemon/channellogger.cpp
++++ b/daemon/channellogger.cpp
+@@ -9,7 +9,16 @@
+
+ #include <QCoroFuture>
++#include <QCryptographicHash>
++#include <QDeadlineTimer>
+ #include <QDBusConnection>
+ #include <QDBusReply>
++#include <QFileInfo>
++#include <QJsonArray>
++#include <QJsonDocument>
++#include <QJsonObject>
++#include <QLocalSocket>
+ #include <QLocale>
++#include <QScopedValueRollback>
++#include <QSettings>
+ #include <QTimer>
+ #include <QtConcurrent>
+@@ -38,4 +47,37 @@ static bool isScreenSaverActive()
+ }
+
++static QJsonArray readCerroMessages()
++{
++    const auto path = SL("/run/cerro-cellular/control.sock");
++    if (!QFileInfo::exists(path)) {
++        return {};
++    }
++
++    QLocalSocket socket;
++    socket.connectToServer(path);
++    if (!socket.waitForConnected(1000)) {
++        return {};
++    }
++    socket.write("{\"action\":\"messages\"}\n");
++    if (socket.bytesToWrite() && !socket.waitForBytesWritten(1000)) {
++        return {};
++    }
++
++    QDeadlineTimer deadline(8000);
++    QByteArray response;
++    while (!response.endsWith('\n')) {
++        if (!socket.bytesAvailable() && !socket.waitForReadyRead(deadline.remainingTime())) {
++            return {};
++        }
++        response += socket.readAll();
++        if (response.size() > 1024 * 1024 || deadline.hasExpired()) {
++            return {};
++        }
++    }
++
++    const auto reply = QJsonDocument::fromJson(response).object();
++    return reply.value(SL("ok")).toBool() ? reply.value(SL("result")).toArray() : QJsonArray{};
++}
++
+ ChannelLogger::ChannelLogger(std::optional<QString> &modemPath, QObject *parent)
+     : QObject(parent)
+@@ -72,4 +114,58 @@ ChannelLogger::ChannelLogger(std::optional<QString> &modemPath, QObject *parent)
+     // Check for any unhandled messages from the modem
+     checkMessages();
++
++    // The stock ModemManager modem represents Cerro's first subscription.
++    auto *cerroSmsTimer = new QTimer(this);
++    connect(cerroSmsTimer, &QTimer::timeout, this, [this] { importCerroMessages(); });
++    cerroSmsTimer->start(10000);
++    importCerroMessages();
++}
++
++QCoro::Task<void> ChannelLogger::importCerroMessages()
++{
++    if (m_importingCerroMessages) {
++        co_return;
++    }
++    QScopedValueRollback importing(m_importingCerroMessages, true);
++    const auto rows = co_await QtConcurrent::run(readCerroMessages);
++    QSettings imported(SL("cerro"), SL("spacebar-sms-import"));
++    for (const auto &entry : rows) {
++        const auto row = entry.toObject();
++        if (row.value(SL("slot")).toInt() != 2 || row.value(SL("direction")).toString() != SL("in")) {
++            continue;
++        }
++
++        const auto sourceId = row.value(SL("id")).toString();
++        const auto sender = row.value(SL("number")).toString();
++        const auto text = row.value(SL("text")).toString();
++        const auto time = row.value(SL("time")).toInteger();
++        if (sourceId.isEmpty() || sender.isEmpty() || text.isEmpty() || time <= 0 || (text.endsWith(u'）') && text.contains(SL("\n（已收到 ")))) {
++            continue;
++        }
++
++        const auto identity = QJsonDocument(QJsonArray{sourceId, sender, time, text}).toJson(QJsonDocument::Compact);
++        const auto key = QString::fromLatin1(QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex());
++        if (imported.contains(key)) {
++            continue;
++        }
++
++        Message message{};
++        message.id = SL("cerro-") + key;
++        message.phoneNumberList = PhoneNumberList(sender);
++        message.datetime = QDateTime::fromSecsSinceEpoch(time);
++        message.text = text;
++        message.deliveryStatus = MessageState::Received;
++        message.read = message.phoneNumberList == m_disabledNotificationNumber;
++        if ((co_await m_database.messagesForNumber(message.phoneNumberList, message.id)).empty()) {
++            co_await addMessage(message);
++            if ((co_await m_database.messagesForNumber(message.phoneNumberList, message.id)).empty()) {
++                continue;
++            }
++            if (!message.read) {
++                createNotification(message);
++            }
++        }
++        imported.setValue(key, true);
++    }
+ }
+
+diff --git a/daemon/channellogger.h b/daemon/channellogger.h
+index d9b0203..d037d7e 100644
+--- a/daemon/channellogger.h
++++ b/daemon/channellogger.h
+@@ -64,4 +64,5 @@ public:
+ private:
+     void checkMessages();
++    QCoro::Task<void> importCerroMessages();
+     QCoro::Task<void> handleIncomingMessage(ModemManager::Sms::Ptr msg);
+     void createDownloadNotification(const MmsMessage &mmsMessage);
+@@ -110,4 +111,5 @@ private:
+
+     bool m_dataConnected;
++    bool m_importingCerroMessages = false;
+
+     QStringList m_deferredIndicators;

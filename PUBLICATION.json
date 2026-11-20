@@ -254,6 +254,8 @@
     "patches/sensors-hexagonrpcd-c1/cerro-hexagonrpcd-fw.conf": "70325b7eab8614ec698d534c30112f02c67b291b0f83e06b6844973f60e7f9da",
     "patches/sensors-hexagonrpcd-c1/cerro-sensors-registry.service": "4e82ad88c3c75298d0ed006cc0378b7a8b0949835339f40124b943fffb3ea6e7",
     "patches/sensors-hexagonrpcd-c1/cerro-vendor.conf": "5170b3e168c02fa4d7b19ab73b93babf00e740eae3bdef4a0210f7215983abe6",
+    "patches/spacebar-cerro/0001-import-cerro-secondary-sim-sms.patch": "01141250fad455c8cc08caf2c5e874e24c9c29f5983a40aeb7389d121efe0659",
+    "patches/spacebar-cerro/README.md": "1ff10e591fb6ba6d41f1ab707afd74e4ea6099c5154fbb339fc4e375cb4edd29",
     "patches/stability-adsp-serialize-c1/README.md": "95672d8253cf0fa4522047b5b26797845ef0c7d2589950e96792ff3ac7289473",
     "patches/stability-adsp-serialize-c1/build.sh": "da8b16c99794bf853a034c4f907231d8f84fa2a141b53ada543b1c4f0115ca30",
     "patches/stability-adsp-serialize-c1/cerro-audio-after-cellular.conf": "d3c07643107977196d3908731e72a61331571b3d434617a73a8af8fce85c2489",
