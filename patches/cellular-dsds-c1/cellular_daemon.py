@@ -24,31 +24,42 @@ class Controller:
         self.ready=False;self.busy=True
     def save(self):
         p=self.file.with_suffix('.tmp');p.write_text(json.dumps(self.slot));p.chmod(0o600);p.replace(self.file)
+    def apply_data_slot(self, slot):
+        if self.secondary.handle:
+            self.secondary.close()
+        profile = 'cerro-sim1-cmnet'
+        active = profile in run('nmcli', '-t', '-f', 'NAME', 'connection', 'show', '--active').splitlines()
+        if slot == 1:
+            self.secondary.dds(1)
+            run('nmcli', 'connection', 'modify', profile, 'connection.autoconnect', 'yes')
+            if not active:
+                run('nmcli', '--wait', '45', 'connection', 'up', profile)
+            return
+        run('nmcli', 'connection', 'modify', profile, 'connection.autoconnect', 'no')
+        if active:
+            run('nmcli', '--wait', '30', 'connection', 'down', profile)
+        if slot == 2:
+            self.secondary.connect()
+        else:
+            self.secondary.dds(1)
+
     def select(self,slot,bootstrap=False):
         if type(slot) is not int or slot not in (0,1,2):raise ValueError('请选择 SIM1、SIM2 或关闭数据')
         with self.lock:
+            previous = self.slot
             self.busy=True
             try:
-                if self.secondary.handle:self.secondary.close()
-                if slot==1:
-                    self.secondary.dds(1)
-                    run('nmcli','connection','modify','cerro-sim1-cmnet','connection.autoconnect','yes')
-                    run('nmcli','--wait','45','connection','up','cerro-sim1-cmnet')
-                else:
-                    run('nmcli','connection','modify','cerro-sim1-cmnet','connection.autoconnect','no')
-                    active=run('nmcli','-t','-f','NAME','connection','show','--active').splitlines()
-                    if 'cerro-sim1-cmnet' in active:run('nmcli','--wait','30','connection','down','cerro-sim1-cmnet')
-                    if slot==2:self.secondary.connect()
-                    else:self.secondary.dds(1)
-                self.slot=slot;self.save()
+                self.apply_data_slot(slot)
+                if slot != previous:
+                    self.slot = slot
+                    self.save()
             except Exception:
-                try:self.secondary.close()
-                finally:
-                    # A transient cold-boot failure must not overwrite the user's selection.
-                    if not bootstrap:
-                        self.slot=1;self.save()
-                        run('nmcli','connection','modify','cerro-sim1-cmnet','connection.autoconnect','yes')
-                        run('nmcli','--wait','45','connection','up','cerro-sim1-cmnet')
+                self.slot = previous
+                if not bootstrap and slot != previous:
+                    try:
+                        self.apply_data_slot(previous)
+                    except Exception as error:
+                        print('cerro-cellular: could not restore previous data selection:', type(error).__name__, flush=True)
                 raise
             finally:self.busy=False
     def initialize(self):

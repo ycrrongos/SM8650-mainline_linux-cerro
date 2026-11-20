@@ -16,24 +16,32 @@ assert nas.queries==3 and nas.closed
 # Compile the real controller class without running its daemon entry point.
 p=pathlib.Path(__file__).with_name('cellular_daemon.py');tree=ast.parse(p.read_text())
 node=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='Controller')
-commands=[]
-def run(*args):commands.append(args);return ''
+commands=[];active=[]
+def run(*args):
+    commands.append(args)
+    return '\n'.join(active) if args[-1]=='--active' else ''
 namespace={'run':run};exec(compile(ast.Module(body=[node],type_ignores=[]),str(p),'exec'),namespace)
 Controller=namespace['Controller']
 class Secondary:
     handle=None
-    def connect(self):raise RuntimeError('injected transient cold-boot failure')
+    def connect(self):raise RuntimeError('injected transient connection failure')
     def close(self):pass
     def dds(self,sub):pass
-for bootstrap,expected in ((True,2),(False,1)):
-    c=Controller.__new__(Controller);c.lock=threading.RLock();c.secondary=Secondary();c.slot=2;c.busy=False
-    saves=[];c.save=lambda:saves.append(c.slot);commands.clear()
+
+for previous, bootstrap in ((2, True), (1, False), (0, False)):
+    c=Controller.__new__(Controller);c.lock=threading.RLock();c.secondary=Secondary();c.slot=previous;c.busy=False
+    saves=[];c.save=lambda:saves.append(c.slot);commands.clear();active.clear()
     try:c.select(2,bootstrap=bootstrap)
     except RuntimeError:pass
     else:raise AssertionError('failed connect reported success')
-    assert c.slot==expected and not c.busy
-    if bootstrap:
-        assert saves==[]
-        assert not any(cmd[-2:]==('up','cerro-sim1-cmnet') for cmd in commands)
-    else:assert saves==[1]
-print('Actual PS attach gate and bootstrap selection-preservation regressions passed')
+    assert c.slot==previous and not c.busy and not saves
+    restored=any(cmd[-2:]==('up','cerro-sim1-cmnet') for cmd in commands)
+    assert restored==(previous==1 and not bootstrap)
+
+active.append('cerro-sim1-cmnet')
+commands.clear()
+c.slot=1
+c.select(1,bootstrap=True)
+assert not any(cmd[-2:]==('up','cerro-sim1-cmnet') for cmd in commands)
+assert not saves and not c.busy
+print('PS attach gate, connection rollback, and active-profile preservation passed')
