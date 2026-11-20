@@ -1,4 +1,4 @@
-# Snapdragon 8 Gen 3 Linux — SM8650 / Nubia Z60 Ultra
+# SM8650 Mainline Linux for Nubia Z60 Ultra (Cerro)
 
 Mainline Linux bring-up for **Qualcomm Snapdragon 8 Gen 3 (SM8650)**, currently
 validated on **Nubia Z60 Ultra, NX721J, codename cerro**. Native Debian + KDE,
@@ -19,8 +19,8 @@ On a Debian/Ubuntu Linux build host (x86_64 cross-compiles ARM64):
 sudo apt-get install git python3 make clang lld llvm flex bison bc \
   libssl-dev libelf-dev dwarves device-tree-compiler cpio rsync kmod
 
-git clone https://github.com/ycrrongos/snapdragon-8gen3-linux.git
-cd snapdragon-8gen3-linux
+git clone https://github.com/ycrrongos/SM8650-mainline_linux-cerro.git
+cd SM8650-mainline_linux-cerro
 make prepare
 JOBS=8 make build
 make test

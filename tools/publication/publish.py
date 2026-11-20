@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-REPO = 'ycrrongos/snapdragon-8gen3-linux'
+REPO = 'ycrrongos/SM8650-mainline_linux-cerro'
 AUTHOR = 'ycrrongos'
 EMAIL = '124893015+ycrrongos@users.noreply.github.com'
 EXTENSIONS = {'.frag','.qml','.py','.sh','.c','.h','.cpp','.S','.patch','.dts','.dtsi','.fragment',
