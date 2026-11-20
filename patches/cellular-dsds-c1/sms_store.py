@@ -58,7 +58,12 @@ class SmsStore:
         if not isinstance(text,str) or not text.strip():raise ValueError('请输入短信内容')
         parts=submit_parts(number,text);c=self.client(sub)
         try:
-            for pdu in parts:c.request(0x20,tlv(1,b'\6'+struct.pack('<H',len(pdu))+pdu)+tlv(0x13,b'\0'),timeout=45)
+            # SIM2 can require the modem-selected transport. Forcing non-IMS
+            # rejects its submission even after NAS reports it registered.
+            transport = tlv(0x13, b'\0') if sub == 1 else b''
+            for pdu in parts:
+                payload = tlv(1, b'\6' + struct.pack('<H', len(pdu)) + pdu)
+                c.request(0x20, payload + transport, timeout=45)
         finally:c.close()
         self.sent.append({'id':'sent-'+str(time.time_ns()),'slot':sub,'direction':'out','number':normalize(number),'text':text,'time':time.time()})
         self.sent=self.sent[-500:]

@@ -144,7 +144,7 @@
     "patches/cellular-dsds-c1/probe-subscriptions.py": "7b904dfa1977f0a7e91390cfa2822d407027f4b6707ac0d124dd9ad7238c3907",
     "patches/cellular-dsds-c1/qmi_socket.py": "08441634d52299184609aee311206fb4bd033f79001eeee1e333a0ec2fa760fd",
     "patches/cellular-dsds-c1/sms_pdu.py": "7b965f2ce3e37f6a84b9578f7508774e13fcedf12f20e2b8045f0903821f69c6",
-    "patches/cellular-dsds-c1/sms_store.py": "bdcbcee7cfe0f2936fe0688a15623656319db32b294d48ab77d7655948a0a375",
+    "patches/cellular-dsds-c1/sms_store.py": "a337c596d88f577c7c8dba6a8211456cf84e4ffc43214054dd6cb0137bc54267",
     "patches/cellular-dsds-c1/test-boot-dependencies.py": "fe9e732125c16a0bffb12c28443d2c717cba4bfd3900283c5e1697e1725bce83",
     "patches/cellular-dsds-c1/test-data-port.py": "98dac0a59b4ec3a235942d35d95cf41ad29c2914e58ac91d8416dc9b7c43dc62",
     "patches/cellular-dsds-c1/test-mutual-sms.py": "6cddc5ac1503fa4952d6aad1510d51d9ca0de22ae1d9348aad75274f026d0496",
