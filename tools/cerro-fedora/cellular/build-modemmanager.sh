@@ -16,14 +16,15 @@ git -C "$source_dir" apply "$patch_dir/0001-qmi-select-primary-logical-slot-on-d
     "$base/tools/cerro-fedora/cellular/0001-mm-netlink-keep-completion-callback.patch" \
     "$base/tools/cerro-fedora/cellular/0002-mm-count-multiplexed-bearers-in-cleanup.patch" \
     "$base/tools/cerro-fedora/cellular/0003-mm-reprobe-qrtr-on-resume.patch" \
-    "$base/tools/cerro-fedora/cellular/0004-mm-bind-wds-to-cerro-default-data-subscription.patch"
+    "$base/tools/cerro-fedora/cellular/0004-mm-bind-wds-to-cerro-default-data-subscription.patch" \
+    "$base/tools/cerro-fedora/cellular/0005-mm-refresh-cerro-lte-attach-settings.patch"
 python3 "$patch_dir/test-primary-slot.py" "$source_dir/src/mm-shared-qmi.c"
 meson setup out "$source_dir" --prefix=/usr --libdir=lib64 --sbindir=sbin \
     -Dintrospection=false -Dvapi=false -Dgtk_doc=false -Dman=false \
     -Dbash_completion=false -Dudevdir=/usr/lib/udev \
     -Dsystemdsystemunitdir=/usr/lib/systemd/system -Ddbus_policy_dir=/usr/share/dbus-1/system.d \
     -Dqrtr=true -Dqmi=true -Dmbim=true -Dpolkit=permissive \
-    "-Ddist_version=\"$(rpm -q --qf '%{VERSION}-%{RELEASE}' ModemManager).cerro5\""
+    "-Ddist_version=\"$(rpm -q --qf '%{VERSION}-%{RELEASE}' ModemManager).cerro6\""
 ninja -C out -j "${JOBS:-4}" src/ModemManager
 cp out/src/ModemManager ModemManager
 patchelf --remove-rpath ModemManager

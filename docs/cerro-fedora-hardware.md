@@ -79,3 +79,10 @@ coordinator has confirmed DDS, preventing a cold-start dial before selection.
 A reboot with SIM2 selected restored an actual working SIM2 IPv4 connection
 on the first service start.
 Spacebar retains the separate secondary-SIM SMS compatibility layer.
+
+The Cerro ModemManager build refreshes `InitialEpsBearerSettings` from the
+modem's current attach PDN when a WDS bearer comes up. An attach profile is
+separate from the APN used by the NetworkManager data connection. A warm
+SIM1 → SIM2 → SIM1 regression test passed IPv4 traffic on all three legs.
+Cold-boot attach profile changes still need independent validation. The modem
+continued to reject SIM1 IPv6 with QMI reason 2/210 after the profile refresh.
