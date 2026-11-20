@@ -65,7 +65,9 @@ secondary carrier's APN explicitly: the modem's exported primary SIM is
 still SIM1 on this DSDS firmware, so NM's primary-SIM APN lookup can pick
 the wrong provider. The installed SIM2 profile disables IPv6 after a
 dual-stack test failed to establish reliable IPv6 traffic, and SIM1
-continues to use IPv4 and IPv6.
+keeps optional IPv6. SIM1 IPv6 worked in a warm test, but the modem refused
+the IPv6 session after a reboot with SIM2 selected followed by a switch to
+SIM1. NetworkManager kept the IPv4 connection.
 
 Use **SIM 与短信** to select either data SIM or to close data. The coordinator
 sets the modem's default data subscription before activating the GSM
@@ -74,4 +76,6 @@ the subscription readback before dialing. NetworkManager applies IP
 configuration from the resulting Bearer. The SIM2 profile is saved with
 autoconnect off and only enables it for the running session after the
 coordinator has confirmed DDS, preventing a cold-start dial before selection.
+A reboot with SIM2 selected restored an actual working SIM2 IPv4 connection
+on the first service start.
 Spacebar retains the separate secondary-SIM SMS compatibility layer.
