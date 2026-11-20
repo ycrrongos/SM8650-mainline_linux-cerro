@@ -88,3 +88,10 @@ Rebooting with SIM2 selected also restored IPv4. Switching to SIM1 then
 updated the reported attach profile from 3 to 2 within the same daemon,
 matching the live QMI readback. SIM1 IPv4 worked after the switch, and
 the modem continued to reject SIM1 IPv6 with QMI reason 2/210.
+
+Further testing reproduced the SIM1 IPv6 refusal on a direct SIM1 reboot.
+A temporary warm ModemManager bearer using the modem's existing 3GNET
+profile by ID obtained IPv6 and carried interface-bound HTTPS traffic.
+The normal NetworkManager profile still uses its automatic APN and may
+fall back to IPv4. Experimental profile selection did not reliably fix
+ordinary activation and was removed from the handset.
