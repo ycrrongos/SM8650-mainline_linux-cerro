@@ -10,6 +10,13 @@ def addr(value):return str(ipaddress.IPv4Address(u32(value)))
 class DataSession:
     iface='cerro-sim2'
     def __init__(self):self.wds=None;self.handle=None;self.link=False
+    def current_dds(self):
+        client = Client(42)
+        try:
+            return u32(client.request(0x4f)[0x10])
+        finally:
+            client.close()
+
     def dds(self,sub):
         c=Client(42)
         try:

@@ -19,12 +19,16 @@ class Controller:
     def __init__(self):
         STATE.mkdir(mode=0o700,parents=True,exist_ok=True)
         self.lock=threading.RLock();self.secondary=DataSession();self.sms=SmsStore(STATE)
+        self.native_sim2 = os.environ.get('CERRO_NATIVE_SIM2') == '1'
         self.file=STATE/'data-slot.json';self.slot=int(json.loads(self.file.read_text())) if self.file.exists() else 1
         if self.slot not in (0,1,2):self.slot=1
         self.ready=False;self.busy=True
     def save(self):
         p=self.file.with_suffix('.tmp');p.write_text(json.dumps(self.slot));p.chmod(0o600);p.replace(self.file)
     def apply_data_slot(self, slot):
+        if self.native_sim2:
+            self.apply_native_data_slot(slot)
+            return
         if self.secondary.handle:
             self.secondary.close()
         profile = 'cerro-sim1-cmnet'
@@ -42,6 +46,41 @@ class Controller:
             self.secondary.connect()
         else:
             self.secondary.dds(1)
+
+    def apply_native_data_slot(self, slot):
+        profiles = {1: 'cerro-sim1-cmnet', 2: 'cerro-sim2-gsm'}
+        active = run('nmcli', '-t', '-f', 'NAME', 'connection', 'show', '--active').splitlines()
+        selected = profiles.get(slot)
+        if selected and run('env', 'LC_ALL=C', 'nmcli', '-t', '-f', 'WWAN', 'general', 'status').strip() != 'enabled':
+            raise RuntimeError('请先开启系统的移动宽带')
+        for index, profile in profiles.items():
+            if index == slot:
+                continue
+            temporary = ('--temporary',) if index == 2 else ()
+            run('nmcli', 'connection', 'modify', *temporary, profile, 'connection.autoconnect', 'no')
+            if profile in active:
+                run('nmcli', '--wait', '30', 'connection', 'down', profile)
+
+        subscription = slot or 1
+        if selected in active and self.secondary.current_dds() != subscription:
+            run('nmcli', '--wait', '30', 'connection', 'down', selected)
+            active.remove(selected)
+        self.secondary.dds(subscription)
+        if selected is None:
+            return
+        if selected not in active:
+            if slot == 2:
+                state = run('mmcli', '-m', 'any', '-K')
+                if any(line.partition(':')[2].strip() == 'disabled' for line in state.splitlines()
+                       if line.partition(':')[0].strip() == 'modem.generic.state'):
+                    run('mmcli', '-m', 'any', '--enable')
+                self.secondary.wait_packet_service(2)
+            run('nmcli', '--wait', '55', 'connection', 'up', selected)
+        if self.secondary.current_dds() != subscription:
+            raise RuntimeError('数据连接的订阅已变化')
+        # Keep SIM2 off on disk until DDS is selected on the next full boot.
+        temporary = ('--temporary',) if slot == 2 else ()
+        run('nmcli', 'connection', 'modify', *temporary, selected, 'connection.autoconnect', 'yes')
 
     def select(self,slot,bootstrap=False):
         if type(slot) is not int or slot not in (0,1,2):raise ValueError('请选择 SIM1、SIM2 或关闭数据')
@@ -67,7 +106,8 @@ class Controller:
         while time.monotonic()<deadline:
             v=subprocess.run(['mmcli','-m','any','-K'],capture_output=True,text=True,timeout=10)
             states=[line.split(':',1)[1].strip() for line in v.stdout.splitlines() if line.split(':',1)[0].strip()=='modem.generic.state']
-            if states and states[0] in ('enabled','registered','connected','connecting','searching'):break
+            if states and (states[0] in ('enabled','registered','connected','connecting','searching')
+                           or self.native_sim2 and states[0] == 'disabled'):break
             time.sleep(.5)
         else:raise RuntimeError('ModemManager hardware initialization not ready')
         with self.lock:self.sms.configure_routes()

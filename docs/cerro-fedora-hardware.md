@@ -56,5 +56,22 @@ sudo nmcli connection modify cerro-sim1-cmnet \
 
 Reactivate the profile to apply it. On the validated SIM1 both IPv4 and IPv6
 HTTPS worked with requests explicitly bound to the cellular link. Carrier
-profiles may require an explicitly supplied APN. SIM2 still uses the Cerro
-compatibility data path, which is IPv4-only.
+profiles may require an explicitly supplied APN.
+
+SIM2 also uses a standard NM GSM profile on the validated Fedora setup.
+Install the matching Cerro ModemManager and cellular controller, then run
+`tools/cerro-fedora/cellular/install-native-sim2.sh SIM2_APN`. Supply the
+secondary carrier's APN explicitly: the modem's exported primary SIM is
+still SIM1 on this DSDS firmware, so NM's primary-SIM APN lookup can pick
+the wrong provider. The installed SIM2 profile disables IPv6 after a
+dual-stack test failed to establish reliable IPv6 traffic, and SIM1
+continues to use IPv4 and IPv6.
+
+Use **SIM 与短信** to select either data SIM or to close data. The coordinator
+sets the modem's default data subscription before activating the GSM
+profile. ModemManager binds the WDS client after mux setup and verifies
+the subscription readback before dialing. NetworkManager applies IP
+configuration from the resulting Bearer. The SIM2 profile is saved with
+autoconnect off and only enables it for the running session after the
+coordinator has confirmed DDS, preventing a cold-start dial before selection.
+Spacebar retains the separate secondary-SIM SMS compatibility layer.

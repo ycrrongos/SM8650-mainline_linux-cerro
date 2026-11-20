@@ -29,7 +29,7 @@ class Secondary:
     def dds(self,sub):pass
 
 for previous, bootstrap in ((2, True), (1, False), (0, False)):
-    c=Controller.__new__(Controller);c.lock=threading.RLock();c.secondary=Secondary();c.slot=previous;c.busy=False
+    c=Controller.__new__(Controller);c.lock=threading.RLock();c.secondary=Secondary();c.slot=previous;c.busy=False;c.native_sim2=False
     saves=[];c.save=lambda:saves.append(c.slot);commands.clear();active.clear()
     try:c.select(2,bootstrap=bootstrap)
     except RuntimeError:pass
@@ -45,3 +45,36 @@ c.select(1,bootstrap=True)
 assert not any(cmd[-2:]==('up','cerro-sim1-cmnet') for cmd in commands)
 assert not saves and not c.busy
 print('PS attach gate, connection rollback, and active-profile preservation passed')
+
+native_commands = []
+def native_run(*args):
+    native_commands.append(args)
+    if args[-1] == 'status':
+        return 'enabled\n'
+    if args[-1] == '--active':
+        return 'cerro-sim1-cmnet\n'
+    if args[-1] == '-K':
+        return 'modem.generic.state : disabled\n'
+    return ''
+
+class NativeSubscription:
+    def __init__(self):
+        self.slot = 1
+    def dds(self, slot):
+        native_commands.append(('DDS', slot))
+        self.slot = slot
+    def current_dds(self):
+        return self.slot
+    def wait_packet_service(self, slot):
+        native_commands.append(('PS', slot))
+
+namespace['run'] = native_run
+c.native_sim2 = True
+c.secondary = NativeSubscription()
+c.select(2)
+assert ('nmcli', '--wait', '30', 'connection', 'down', 'cerro-sim1-cmnet') in native_commands
+assert native_commands.index(('DDS', 2)) < native_commands.index(('PS', 2))
+assert native_commands.index(('PS', 2)) < native_commands.index(('nmcli', '--wait', '55', 'connection', 'up', 'cerro-sim2-gsm'))
+assert native_commands[-1] == ('nmcli', 'connection', 'modify', '--temporary', 'cerro-sim2-gsm', 'connection.autoconnect', 'yes')
+assert saves == [2]
+print('Native SIM2 selects DDS before activating GSM and enables runtime-only autoconnect')
