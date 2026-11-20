@@ -1,0 +1,12 @@
+--- a/src/mm-iface-modem.c
++++ b/src/mm-iface-modem.c
+@@ -6774,5 +6774,8 @@
+         max = mm_bearer_list_get_max_active_multiplexed (list);
+     else
+-        max = mm_bearer_list_get_max_active (list);
++        /* Unfiltered counts include multiplexed connections as well. IPA may
++         * allow only multiplexed bearers, with zero non-multiplexed capacity. */
++        max = mm_bearer_list_get_max_active (list) +
++              mm_bearer_list_get_max_active_multiplexed (list);
+
+     mm_bearer_list_foreach (list, (MMBearerListForeachFunc)bearer_count, &ctx);

@@ -1,0 +1,75 @@
+--- a/src/main.c
++++ b/src/main.c
+@@ -80,5 +80,5 @@
+ {
+     mm_dbg ("re-scanning (resuming)");
+-    mm_base_manager_start (manager, FALSE);
++    mm_base_manager_resume (manager);
+ }
+
+--- a/src/mm-base-manager.h
++++ b/src/mm-base-manager.h
+@@ -86,4 +86,6 @@
+
+ #if defined WITH_SUSPEND_RESUME
++void             mm_base_manager_resume     (MMBaseManager *manager);
++
+ void             mm_base_manager_sync        (MMBaseManager *manager);
+ #endif
+--- a/src/mm-base-manager.c
++++ b/src/mm-base-manager.c
+@@ -872,4 +872,21 @@
+ /*****************************************************************************/
+
++void
++mm_base_manager_resume (MMBaseManager *self)
++{
++    /* Full suspend cancels the old authentication requests and removes
++     * device objects, but the QRTR watcher keeps its live nodes. */
++    g_clear_object (&self->priv->authp_cancellable);
++    self->priv->authp_cancellable = g_cancellable_new ();
++
++    mm_base_manager_start (self, FALSE);
++#if defined WITH_QRTR
++    if (self->priv->auto_scan && self->priv->qrtr_bus_watcher)
++        mm_qrtr_bus_watcher_replay_devices (self->priv->qrtr_bus_watcher);
++#endif
++}
++
++/*****************************************************************************/
++
+ typedef enum {
+     DEVICE_CLEANUP_STEP_FIRST = 0,
+--- a/src/mm-qrtr-bus-watcher.h
++++ b/src/mm-qrtr-bus-watcher.h
+@@ -62,4 +62,6 @@
+                                            GError             **error);
+
++void mm_qrtr_bus_watcher_replay_devices (MMQrtrBusWatcher *self);
++
+ QrtrNode *mm_qrtr_bus_watcher_peek_node (MMQrtrBusWatcher *self,
+                                          guint32           node_id);
+--- a/src/mm-qrtr-bus-watcher.c
++++ b/src/mm-qrtr-bus-watcher.c
+@@ -159,4 +159,21 @@
+
+ /*****************************************************************************/
++
++void
++mm_qrtr_bus_watcher_replay_devices (MMQrtrBusWatcher *self)
++{
++    GHashTableIter iter;
++    gpointer       value;
++
++    g_hash_table_iter_init (&iter, self->priv->nodes);
++    while (g_hash_table_iter_next (&iter, NULL, &value)) {
++        QrtrNode *node = QRTR_NODE (value);
++
++        if (qrtr_node_lookup_port (node, QMI_SERVICE_WDS) >= 0 &&
++            qrtr_node_lookup_port (node, QMI_SERVICE_NAS) >= 0 &&
++            qrtr_node_lookup_port (node, QMI_SERVICE_DMS) >= 0)
++            g_signal_emit (self, signals[QRTR_DEVICE_ADDED], 0, qrtr_node_get_id (node));
++    }
++}
+
+ QrtrNode *
