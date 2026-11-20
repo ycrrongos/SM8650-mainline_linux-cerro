@@ -40,3 +40,21 @@ capture stream. Both hardware PCMs ran and the capture had nonzero samples.
 
 A separate boot after installing both camera and interconnect changes showed
 the camera service completing its first probe and all four cpufreq policies.
+
+## Cellular profile
+
+Cerro's primary SIM uses a standard NetworkManager GSM connection. Install
+Fedora's `mobile-broadband-provider-info` and allow NetworkManager to select
+the provider APN. The current deployment's profile is named
+`cerro-sim1-cmnet` for compatibility with Cerro's data selector.
+
+```sh
+sudo dnf install mobile-broadband-provider-info
+sudo nmcli connection modify cerro-sim1-cmnet \
+  gsm.apn "" gsm.auto-config yes ipv6.method auto ipv6.may-fail yes
+```
+
+Reactivate the profile to apply it. On the validated SIM1 both IPv4 and IPv6
+HTTPS worked with requests explicitly bound to the cellular link. Carrier
+profiles may require an explicitly supplied APN. SIM2 still uses the Cerro
+compatibility data path, which is IPv4-only.
