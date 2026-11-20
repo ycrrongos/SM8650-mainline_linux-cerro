@@ -1,0 +1,185 @@
+--- a/src/mm-bearer-qmi.c
++++ b/src/mm-bearer-qmi.c
+@@ -33,4 +33,5 @@
+ #include "mm-iface-modem-3gpp-profile-manager.h"
+ #include "mm-bearer-qmi.h"
++#include "mm-broadband-modem-qmi.h"
+ #include "mm-modem-helpers-qmi.h"
+ #include "mm-port-enums-types.h"
+@@ -471,8 +472,10 @@
+     CONNECT_STEP_SETUP_LINK_MAIN_UP,
+     CONNECT_STEP_IP_METHOD,
++    CONNECT_STEP_CERRO_DDS,
+     CONNECT_STEP_IPV4,
+     CONNECT_STEP_WDS_CLIENT_IPV4,
+     CONNECT_STEP_BIND_DATA_PORT_IPV4,
+     CONNECT_STEP_IP_FAMILY_IPV4,
++    CONNECT_STEP_CERRO_BIND_IPV4,
+     CONNECT_STEP_ENABLE_INDICATIONS_IPV4,
+     CONNECT_STEP_START_NETWORK_IPV4,
+@@ -483,4 +486,5 @@
+     CONNECT_STEP_BIND_DATA_PORT_IPV6,
+     CONNECT_STEP_IP_FAMILY_IPV6,
++    CONNECT_STEP_CERRO_BIND_IPV6,
+     CONNECT_STEP_ENABLE_INDICATIONS_IPV6,
+     CONNECT_STEP_START_NETWORK_IPV6,
+@@ -496,4 +500,5 @@
+     MMPort      *data;
+     MMPortQmi   *qmi;
++    guint32      cerro_data_subscription;
+
+     MMQmiDataEndpoint  endpoint;
+@@ -1565,4 +1570,103 @@
+ }
+
++/* Fedora libqmi 1.36 has no generated WDS subscription methods. DSD Get
++ * Current DDS is also absent. Use the normal QmiDevice transport and the
++ * allocated clients, including their native transaction-id counters. */
++#define CERRO_SUBSCRIPTION_PRIMARY 1
++#define CERRO_SUBSCRIPTION_SECONDARY 2
++
++#define CERRO_DSD_GET_DDS 0x004f
++#define CERRO_WDS_BIND_SUBSCRIPTION 0x00af
++#define CERRO_WDS_GET_SUBSCRIPTION 0x00b0
++
++static void cerro_command_ready (QmiDevice *device, GAsyncResult *res, GTask *task);
++
++static void
++cerro_command (QmiClient *client,
++               guint16    message_id,
++               guint32    subscription,
++               GTask     *task)
++{
++    g_autoptr(QmiMessage) request = NULL;
++    GError *error = NULL;
++    guint32 value = GUINT32_TO_LE (subscription);
++
++    request = qmi_message_new (qmi_client_get_service (client),
++                               qmi_client_get_cid (client),
++                               qmi_client_get_next_transaction_id (client),
++                               message_id);
++    if (message_id == CERRO_WDS_BIND_SUBSCRIPTION &&
++        !qmi_message_add_raw_tlv (request, 0x01, (const guint8 *) &value, sizeof (value), &error)) {
++        complete_connect (task, NULL, error);
++        return;
++    }
++    qmi_device_command_full (QMI_DEVICE (qmi_client_peek_device (client)), request, NULL, 10,
++                             g_task_get_cancellable (task),
++                             (GAsyncReadyCallback) cerro_command_ready, task);
++}
++
++static void
++cerro_command_ready (QmiDevice    *device,
++                     GAsyncResult *res,
++                     GTask        *task)
++{
++    ConnectContext *ctx = g_task_get_task_data (task);
++    g_autoptr(QmiMessage) response = NULL;
++    GError *error = NULL;
++    const guint8 *tlv;
++    guint16 length;
++    guint16 command;
++    guint32 subscription;
++
++    response = qmi_device_command_full_finish (device, res, &error);
++    if (!response) {
++        complete_connect (task, NULL, error);
++        return;
++    }
++
++    command = qmi_message_get_message_id (response);
++    tlv = qmi_message_get_raw_tlv (response, 0x02, &length);
++    if (!tlv || length != 4 || tlv[0] || tlv[1] || tlv[2] || tlv[3]) {
++        complete_connect (task, NULL, g_error_new (MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                                                   "Cerro QMI command 0x%04x failed (code %u)",
++                                                   command, tlv && length == 4 ? tlv[2] | (tlv[3] << 8) : 0));
++        return;
++    }
++
++    if (command == CERRO_WDS_BIND_SUBSCRIPTION) {
++        QmiClient *client = QMI_CLIENT (ctx->running_ipv4 ? ctx->client_ipv4 : ctx->client_ipv6);
++        cerro_command (client, CERRO_WDS_GET_SUBSCRIPTION, 0, task);
++        return;
++    }
++
++    tlv = qmi_message_get_raw_tlv (response, 0x10, &length);
++    if (!tlv || length != sizeof (subscription)) {
++        complete_connect (task, NULL, g_error_new_literal (MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                                                          "Cerro QMI subscription reply is malformed"));
++        return;
++    }
++    memcpy (&subscription, tlv, sizeof (subscription));
++    subscription = GUINT32_FROM_LE (subscription);
++
++    if (command == CERRO_DSD_GET_DDS) {
++        if (subscription != CERRO_SUBSCRIPTION_PRIMARY &&
++            subscription != CERRO_SUBSCRIPTION_SECONDARY) {
++            complete_connect (task, NULL, g_error_new_literal (MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                                                              "Cerro modem has no usable default data subscription"));
++            return;
++        }
++        ctx->cerro_data_subscription = subscription;
++    } else if (subscription != ctx->cerro_data_subscription) {
++        complete_connect (task, NULL, g_error_new_literal (MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                                                          "Cerro WDS subscription readback mismatch"));
++        return;
++    } else {
++        mm_obj_msg (ctx->self, "verified IPv%u WDS data subscription %u",
++                     ctx->running_ipv4 ? 4 : 6, subscription);
++    }
++    ctx->step++;
++    connect_context_step (task);
++}
++
+ static void
+ set_ip_family_ready (QmiClientWds *client,
+@@ -2029,4 +2133,21 @@
+         /* fall through */
+
++    case CONNECT_STEP_CERRO_DDS:
++        if (g_strcmp0 (g_getenv ("MM_CERRO_QMI_DDS"), "1") == 0 &&
++            g_strcmp0 (mm_kernel_device_get_driver (mm_port_peek_kernel_device (ctx->data)), "ipa") == 0) {
++            MMPortQmi *port = mm_broadband_modem_qmi_peek_port_qmi (MM_BROADBAND_MODEM_QMI (ctx->modem));
++            QmiClient *client = port ? mm_port_qmi_peek_client (port, QMI_SERVICE_DSD, MM_PORT_QMI_FLAG_DEFAULT) : NULL;
++
++            if (!client) {
++                complete_connect (task, NULL, g_error_new_literal (MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                                                                  "Cerro modem has no DSD client"));
++                return;
++            }
++            cerro_command (client, CERRO_DSD_GET_DDS, 0, task);
++            return;
++        }
++        ctx->step++;
++        /* fall through */
++
+     case CONNECT_STEP_IPV4:
+         /* If no IPv4 setup needed, jump to IPv6 */
+@@ -2128,4 +2249,13 @@
+         /* fall through */
+
++    case CONNECT_STEP_CERRO_BIND_IPV4:
++        if (ctx->cerro_data_subscription) {
++            cerro_command (QMI_CLIENT (ctx->client_ipv4), CERRO_WDS_BIND_SUBSCRIPTION,
++                           ctx->cerro_data_subscription, task);
++            return;
++        }
++        ctx->step++;
++        /* fall through */
++
+     case CONNECT_STEP_ENABLE_INDICATIONS_IPV4:
+         common_setup_cleanup_packet_service_status_unsolicited_events (ctx->self,
+@@ -2269,4 +2399,13 @@
+         return;
+     }
++
++    case CONNECT_STEP_CERRO_BIND_IPV6:
++        if (ctx->cerro_data_subscription) {
++            cerro_command (QMI_CLIENT (ctx->client_ipv6), CERRO_WDS_BIND_SUBSCRIPTION,
++                           ctx->cerro_data_subscription, task);
++            return;
++        }
++        ctx->step++;
++        /* fall through */
+
+     case CONNECT_STEP_ENABLE_INDICATIONS_IPV6:

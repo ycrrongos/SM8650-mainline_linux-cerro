@@ -18,15 +18,15 @@ if printf '%s\n' "$deps" | grep -q 'not found'; then
     exit 1
 fi
 vendor_release=$(rpm -q --qf '%{VERSION}-%{RELEASE}' ModemManager)
-"$candidate" --version | grep -Fx "ModemManager $vendor_release.cerro4"
+"$candidate" --version | grep -Fx "ModemManager $vendor_release.cerro5"
 
-base=/usr/local/libexec/cerro-mm-fedora-r4
-conf=/etc/systemd/system/ModemManager.service.d/zzzzz-cerro-qrtr-resume-r4.conf
+base=/usr/local/libexec/cerro-mm-fedora-r5
+conf=/etc/systemd/system/ModemManager.service.d/zzzzzz-cerro-dsds-bearer-r5.conf
 test ! -e "$conf"
 install -d "$base" "$(dirname "$conf")"
 install -m 0755 "$candidate" "$base/ModemManager"
 printf '%s  %s\n' "$hash" "$base/ModemManager" | sha256sum -c -
-printf '[Service]\nExecStart=\nExecStart=%s/ModemManager\n' "$base" > "$conf"
+printf '[Service]\nEnvironment=MM_CERRO_QMI_DDS=1\nExecStart=\nExecStart=%s/ModemManager\n' "$base" > "$conf"
 if ! systemctl daemon-reload || ! systemd-analyze verify ModemManager.service; then
     rm -f "$conf"
     systemctl daemon-reload
