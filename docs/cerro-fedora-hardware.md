@@ -84,5 +84,7 @@ The Cerro ModemManager build refreshes `InitialEpsBearerSettings` from the
 modem's current attach PDN when a WDS bearer comes up. An attach profile is
 separate from the APN used by the NetworkManager data connection. A warm
 SIM1 → SIM2 → SIM1 regression test passed IPv4 traffic on all three legs.
-Cold-boot attach profile changes still need independent validation. The modem
-continued to reject SIM1 IPv6 with QMI reason 2/210 after the profile refresh.
+Rebooting with SIM2 selected also restored IPv4. Switching to SIM1 then
+updated the reported attach profile from 3 to 2 within the same daemon,
+matching the live QMI readback. SIM1 IPv4 worked after the switch, and
+the modem continued to reject SIM1 IPv6 with QMI reason 2/210.
