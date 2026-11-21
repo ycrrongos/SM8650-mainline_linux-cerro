@@ -4073,3 +4073,346 @@ index b429acde4..703b5bb4e 100644
  /* transmit data ending at the same time for all lanes within one hsync */
  #define MIPI_DSI_HS_PKT_END_ALIGNED	BIT(12)
  
+diff --git a/drivers/input/misc/aw86927.c b/drivers/input/misc/aw86927.c
+index f53b8f004..784bc5c8d 100644
+--- a/drivers/input/misc/aw86927.c
++++ b/drivers/input/misc/aw86927.c
+@@ -17,6 +17,7 @@
+ #include <linux/regmap.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/types.h>
++#include <linux/uaccess.h>
+ 
+ #define AW86927_RSTCFG_REG			0x00
+ #define AW86927_RSTCFG_SOFTRST			0xaa
+@@ -175,6 +176,16 @@
+ #define AW86927_BASEADDRH_VAL			0x08
+ #define AW86927_BASEADDRL_VAL			0x00
+ 
++/* At 24 kHz, limit custom effects to 30 ms and the stock drive amplitude. */
++#define AW86927_CUSTOM_MAX_SAMPLES		720
++#define AW86927_CUSTOM_MAX_AMPLITUDE		85
++
++struct aw86927_custom_effect {
++	u16 length;
++	u16 level;
++	u8 samples[AW86927_CUSTOM_MAX_SAMPLES];
++};
++
+ enum aw86927_work_mode {
+ 	AW86927_STANDBY_MODE,
+ 	AW86927_RAM_MODE,
+@@ -193,7 +204,17 @@ struct aw86927_data {
+ 	struct i2c_client *client;
+ 	struct regmap *regmap;
+ 	struct gpio_desc *reset_gpio;
++	/* The input event lock protects the selected effect and effect slots. */
+ 	u16 level;
++	int custom_id;
++	struct aw86927_custom_effect *effects;
++	int (*ff_upload)(struct input_dev *dev, struct ff_effect *effect,
++			 struct ff_effect *old);
++	int (*ff_playback)(struct input_dev *dev, int id, int value);
++
++	/* RAM cache is used only by the playback worker after probe. */
++	u16 ram_length;
++	u8 ram_samples[AW86927_CUSTOM_MAX_SAMPLES];
+ };
+ 
+ static const struct regmap_config aw86927_regmap_config = {
+@@ -226,14 +247,18 @@ struct aw86927_sram_waveform_header {
+ 	__be16 end_address;
+ } __packed;
+ 
+-static const struct aw86927_sram_waveform_header sram_waveform_header = {
+-	.version = 0x01,
+-	.start_address = cpu_to_be16(AW86927_RAM_BASE_ADDR +
+-			sizeof(struct aw86927_sram_waveform_header)),
+-	.end_address = cpu_to_be16(AW86927_RAM_BASE_ADDR +
+-			sizeof(struct aw86927_sram_waveform_header) +
+-			ARRAY_SIZE(aw86927_waveform) - 1),
+-};
++static int aw86927_set_ram_address(struct aw86927_data *haptics)
++{
++	int err;
++
++	err = regmap_write(haptics->regmap,
++			   AW86927_RAMADDRH_REG, AW86927_BASEADDRH_VAL);
++	if (err)
++		return err;
++
++	return regmap_write(haptics->regmap,
++			    AW86927_RAMADDRL_REG, AW86927_BASEADDRL_VAL);
++}
+ 
+ static int aw86927_wait_enter_standby(struct aw86927_data *haptics)
+ {
+@@ -343,13 +368,147 @@ static int aw86927_haptics_play(struct input_dev *dev, void *data, struct ff_eff
+ 		return 0;
+ 
+ 	haptics->level = level;
++	haptics->custom_id = -1;
+ 
+ 	schedule_work(&haptics->play_work);
+ 
+ 	return 0;
+ }
+ 
+-static int aw86927_play_sine(struct aw86927_data *haptics)
++static int aw86927_write_wave(struct aw86927_data *haptics,
++			       const u8 *samples, u16 length)
++{
++	u16 start = AW86927_RAM_BASE_ADDR +
++		    sizeof(struct aw86927_sram_waveform_header);
++	struct aw86927_sram_waveform_header header = {
++		.version = 1,
++		.start_address = cpu_to_be16(start),
++		.end_address = cpu_to_be16(start + length - 1),
++	};
++	int err;
++
++	err = aw86927_set_ram_address(haptics);
++	if (err)
++		return err;
++
++	err = regmap_noinc_write(haptics->regmap, AW86927_RAMDATA_REG,
++				 &header, sizeof(header));
++	if (err)
++		return err;
++
++	err = regmap_noinc_write(haptics->regmap, AW86927_RAMDATA_REG,
++				 samples, length);
++	if (err)
++		return err;
++
++	memcpy(haptics->ram_samples, samples, length);
++	haptics->ram_length = length;
++	return 0;
++}
++
++static int aw86927_load_wave(struct aw86927_data *haptics,
++			      const u8 *samples, u16 length)
++{
++	int err, disable_err;
++
++	if (haptics->ram_length == length &&
++	    !memcmp(haptics->ram_samples, samples, length))
++		return 0;
++
++	haptics->ram_length = 0;
++	err = regmap_update_bits(haptics->regmap, AW86927_SYSCTRL3_REG,
++				 AW86927_SYSCTRL3_EN_RAMINIT_MASK,
++				 AW86927_SYSCTRL3_EN_RAMINIT_MASK);
++	if (err)
++		return err;
++
++	usleep_range(1000, 1500);
++	err = aw86927_write_wave(haptics, samples, length);
++	disable_err = regmap_clear_bits(haptics->regmap, AW86927_SYSCTRL3_REG,
++					AW86927_SYSCTRL3_EN_RAMINIT_MASK);
++	if (disable_err)
++		haptics->ram_length = 0;
++
++	return err ?: disable_err;
++}
++
++static bool aw86927_is_custom(const struct ff_effect *effect)
++{
++	return effect->type == FF_PERIODIC &&
++	       effect->u.periodic.waveform == FF_CUSTOM;
++}
++
++static int aw86927_custom_upload(struct input_dev *dev, struct ff_effect *effect,
++				  struct ff_effect *old)
++{
++	struct aw86927_data *haptics = input_get_drvdata(dev);
++	const struct ff_periodic_effect *periodic = &effect->u.periodic;
++	struct aw86927_custom_effect custom = {};
++	s16 *data;
++	int sum = 0;
++	u32 i;
++
++	if (!aw86927_is_custom(effect))
++		return haptics->ff_upload(dev, effect, old);
++
++	if (periodic->custom_len < 2 ||
++	    periodic->custom_len > AW86927_CUSTOM_MAX_SAMPLES ||
++	    periodic->magnitude <= 0 || periodic->offset || periodic->phase ||
++	    periodic->envelope.attack_length || periodic->envelope.fade_length ||
++	    effect->replay.delay || effect->trigger.button)
++		return -EINVAL;
++
++	data = memdup_user(periodic->custom_data,
++			   periodic->custom_len * sizeof(*data));
++	if (IS_ERR(data))
++		return PTR_ERR(data);
++
++	for (i = 0; i < periodic->custom_len; i++) {
++		int sample = data[i] * AW86927_CUSTOM_MAX_AMPLITUDE / 32768;
++
++		sum += sample;
++		custom.samples[i] = sample;
++	}
++	kfree(data);
++
++	/* Avoid DC and abrupt start/stop drive on the linear actuator. */
++	if (custom.samples[0] || custom.samples[i - 1] || abs(sum) > 2 * (int)i)
++		return -EINVAL;
++
++	custom.length = i;
++	custom.level = periodic->magnitude * 2;
++	guard(spinlock_irq)(&dev->event_lock);
++	haptics->effects[effect->id] = custom;
++	/* The driver has copied the waveform and never retains a user pointer. */
++	effect->u.periodic.custom_data = NULL;
++
++	return 0;
++}
++
++static int aw86927_effect_playback(struct input_dev *dev, int id, int value)
++{
++	struct aw86927_data *haptics = input_get_drvdata(dev);
++
++	if (!aw86927_is_custom(&dev->ff->effects[id]))
++		return haptics->ff_playback(dev, id, value);
++
++	/* Do not interrupt system notifications for a short click. */
++	if (haptics->level)
++		return 0;
++
++	if (value > 0)
++		haptics->custom_id = id;
++	else if (haptics->custom_id == id)
++		haptics->custom_id = -1;
++	else
++		return 0;
++
++	schedule_work(&haptics->play_work);
++	return 0;
++}
++
++static int aw86927_play_ram(struct aw86927_data *haptics, u16 level,
++			    const u8 *samples, u16 length, bool loop)
+ {
+ 	int err;
+ 
+@@ -357,6 +516,10 @@ static int aw86927_play_sine(struct aw86927_data *haptics)
+ 	if (err)
+ 		return err;
+ 
++	err = aw86927_load_wave(haptics, samples, length);
++	if (err)
++		return err;
++
+ 	err = aw86927_play_mode(haptics, AW86927_RAM_MODE);
+ 	if (err)
+ 		return err;
+@@ -386,11 +549,11 @@ static int aw86927_play_sine(struct aw86927_data *haptics)
+ 				 AW86927_WAVCFG9_REG,
+ 				 AW86927_WAVCFG9_SEQ1LOOP_MASK,
+ 				 FIELD_PREP(AW86927_WAVCFG9_SEQ1LOOP_MASK,
+-					    AW86927_WAVCFG9_SEQ1LOOP_INFINITELY));
++					    loop ? AW86927_WAVCFG9_SEQ1LOOP_INFINITELY : 0));
+ 	if (err)
+ 		return err;
+ 
+-	err = regmap_write(haptics->regmap, AW86927_PLAYCFG2_REG, haptics->level * 0x80 / 0xffff);
++	err = regmap_write(haptics->regmap, AW86927_PLAYCFG2_REG, level * 0x80 / 0xffff);
+ 	if (err)
+ 		return err;
+ 
+@@ -409,6 +572,10 @@ static void aw86927_close(struct input_dev *input)
+ 	int err;
+ 
+ 	cancel_work_sync(&haptics->play_work);
++	scoped_guard(spinlock_irq, &input->event_lock) {
++		haptics->custom_id = -1;
++		haptics->level = 0;
++	}
+ 
+ 	err = aw86927_stop(haptics);
+ 	if (err)
+@@ -419,16 +586,27 @@ static void aw86927_haptics_play_work(struct work_struct *work)
+ {
+ 	struct aw86927_data *haptics =
+ 		container_of(work, struct aw86927_data, play_work);
+-	struct device *dev = &haptics->client->dev;
++	struct aw86927_custom_effect custom = {};
++	u16 level;
+ 	int err;
+ 
+-	if (haptics->level)
+-		err = aw86927_play_sine(haptics);
++	scoped_guard(spinlock_irq, &haptics->input_dev->event_lock) {
++		level = haptics->level;
++		if (haptics->custom_id >= 0)
++			custom = haptics->effects[haptics->custom_id];
++	}
++
++	if (level)
++		err = aw86927_play_ram(haptics, level, aw86927_waveform,
++				      ARRAY_SIZE(aw86927_waveform), true);
++	else if (custom.length)
++		err = aw86927_play_ram(haptics, custom.level, custom.samples,
++				      custom.length, false);
+ 	else
+ 		err = aw86927_stop(haptics);
+ 
+ 	if (err)
+-		dev_err(dev, "Failed to execute work command: %d\n", err);
++		dev_err_ratelimited(haptics->dev, "Failed to play haptic effect: %d\n", err);
+ }
+ 
+ static void aw86927_hw_reset(struct aw86927_data *haptics)
+@@ -639,26 +817,8 @@ static int aw86927_ram_init(struct aw86927_data *haptics)
+ 	if (err)
+ 		return err;
+ 
+-	/* Set start of SRAM, before the data is written it will be the same as the base */
+-	err = regmap_write(haptics->regmap,
+-			   AW86927_RAMADDRH_REG, AW86927_BASEADDRH_VAL);
+-	if (err)
+-		return err;
+-
+-	err = regmap_write(haptics->regmap,
+-			   AW86927_RAMADDRL_REG, AW86927_BASEADDRL_VAL);
+-	if (err)
+-		return err;
+-
+-	/* Write waveform header to SRAM */
+-	err = regmap_noinc_write(haptics->regmap, AW86927_RAMDATA_REG,
+-				 &sram_waveform_header, sizeof(sram_waveform_header));
+-	if (err)
+-		return err;
+-
+-	/* Write waveform to SRAM */
+-	err = regmap_noinc_write(haptics->regmap, AW86927_RAMDATA_REG,
+-				 aw86927_waveform, ARRAY_SIZE(aw86927_waveform));
++	err = aw86927_write_wave(haptics, aw86927_waveform,
++				  ARRAY_SIZE(aw86927_waveform));
+ 	if (err)
+ 		return err;
+ 
+@@ -838,6 +998,22 @@ static int aw86927_probe(struct i2c_client *client)
+ 	if (err)
+ 		return dev_err_probe(haptics->dev, err, "Failed to create FF dev\n");
+ 
++	haptics->custom_id = -1;
++	if (haptics->model == AW86927) {
++		struct ff_device *ff = haptics->input_dev->ff;
++
++		haptics->effects = devm_kcalloc(haptics->dev, ff->max_effects,
++					      sizeof(*haptics->effects), GFP_KERNEL);
++		if (!haptics->effects)
++			return -ENOMEM;
++
++		haptics->ff_upload = ff->upload;
++		haptics->ff_playback = ff->playback;
++		ff->upload = aw86927_custom_upload;
++		ff->playback = aw86927_effect_playback;
++		input_set_capability(haptics->input_dev, EV_FF, FF_CUSTOM);
++	}
++
+ 	/* Set up registers */
+ 	err = aw86927_play_mode(haptics, AW86927_STANDBY_MODE);
+ 	if (err)

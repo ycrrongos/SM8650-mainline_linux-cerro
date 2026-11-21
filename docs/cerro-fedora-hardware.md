@@ -123,3 +123,24 @@ Fedora's `feedbackd` package. The standard Fedora udev rule discovers
 rumble device. On a fresh boot the feedbackd session-bus Vibrate call
 succeeded from the desktop user and three timed pulses were confirmed
 with a microphone.
+
+### Custom haptic waveforms
+
+The Cerro AW86927 driver accepts short signed PCM effects through evdev
+`FF_PERIODIC` with `FF_CUSTOM`. It loads the samples into SRAM and plays
+them once. The device still provides `FF_RUMBLE` for feedbackd and KDE.
+For short UI effects, upload once and reuse the effect ID on the same open
+file descriptor. The driver caches the last SRAM waveform, so replaying it
+avoids another I²C upload.
+
+On Fedora, install `python3-evdev` and run the helper from the active seat:
+
+```sh
+python3 tools/cerro-fedora/haptics/play-waveform.py --strength 0.65
+python3 tools/cerro-fedora/haptics/play-waveform.py click.wav --strength 0.55
+```
+
+The first command plays a built-in decaying click. A supplied file must
+be mono, 16-bit signed PCM at 24 kHz with 2–720 samples. Start and end at
+zero and keep the samples balanced around zero. Strength maps to the evdev
+effect magnitude. The sample length controls the one-shot payload.
