@@ -3,7 +3,7 @@
   "upstream_ref": "v7.2-rc5",
   "upstream_commit": "f5098b6bae761e346ebcd9da7f95622c04733cff",
   "tested_source_commit": "cb8514069f804a0f8834af594f6776c029b2c28f",
-  "patch_sha256": "3e8317d70077109167e119595b606713784b1a4989b7209c8c73404be0267faa",
+  "patch_sha256": "da7056aca0a9c9388ff0f12f232e4c6f4f1ea0f0269ecf6f12923760bf06215b",
   "config_sha256": "4a39d982591e0464dbc6f6e3aa4a6315b82f705e6f4e34fcb9afde94c4c30a82",
   "architecture": "arm64",
   "compiler_observed": "clang 23.1.4",

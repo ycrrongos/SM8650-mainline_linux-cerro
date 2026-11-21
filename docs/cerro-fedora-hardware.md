@@ -109,3 +109,17 @@ activation. The SIM1 boot test transferred IPv4 and IPv6 HTTPS without a
 manual reconnect. The SIM2 IPv4 profile and the stored modem attach list
 remain in use. A separate early startup retry of the Cerro data selector
 was observed and still needs investigation.
+
+## Haptics
+
+The Cerro device tree connects the AW86927 vibrator to I²C hub SE4 at
+address `0x5a`. It releases the unused CCI2 master 1 pin group, which
+otherwise claims the vibrator's reset GPIO. The tested front and rear
+main cameras still capture frames.
+
+Install the `aw86927` and `ff-memless` modules for the running kernel and
+Fedora's `feedbackd` package. The standard Fedora udev rule discovers
+`aw86927-haptics` and grants the active desktop user access to the evdev
+rumble device. On a fresh boot the feedbackd session-bus Vibrate call
+succeeded from the desktop user and three timed pulses were confirmed
+with a microphone.

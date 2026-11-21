@@ -1455,7 +1455,37 @@
 };
 
 &cci2 {
+	pinctrl-0 = <&cci2_0_default>;
+	pinctrl-1 = <&cci2_0_sleep>;
 	status = "okay";
+};
+
+/* The unused second master takes GPIO120, the vibrator reset on Cerro. */
+&cci2_i2c1 {
+	status = "disabled";
+};
+
+&i2c_hub_4 {
+	clock-frequency = <100000>;
+	status = "okay";
+
+	vibrator@5a {
+		compatible = "awinic,aw86927";
+		reg = <0x5a>;
+		interrupts-extended = <&tlmm 163 IRQ_TYPE_EDGE_FALLING>;
+		reset-gpios = <&tlmm 120 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vibrator_irq_default>;
+	};
+};
+
+&tlmm {
+	vibrator_irq_default: vibrator-irq-state {
+		pins = "gpio163";
+		function = "gpio";
+		bias-pull-up;
+		input-enable;
+	};
 };
 
 &xo_board {
@@ -1487,7 +1517,6 @@
  *     ath12k/qca firmware on rootfs; modem needs vendor MBA/modem + rmtfs.
  *   - NFC: st21nfc@08 (I2C) + st54spi (SPI secure element).
  *   - Audio (s5fr): WCD939x headset; 2× AW88261 on i2c_hub_3 (not WSA884x).
- *   - Haptics: awinic haptic_hv@5A (I2C).
  *   - Game shoulder-key slider: gpio_keys_nubia (game_sw_on/off) - need
  *     the exact TLMM pins from a fuller downstream dump.
  *   - Fingerprint (goodix, SPI, pwr gpio TLMM93): no mainline driver.
