@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Vibration Tester
+Name[zh_CN]=振动测试
+Comment=Compare short haptic waveforms
+Comment[zh_CN]=对比短振动波形
+Exec=/usr/local/bin/cerro-haptic-waveform --gui
+Icon=preferences-system
+Terminal=false
+Categories=Settings;HardwareSettings;

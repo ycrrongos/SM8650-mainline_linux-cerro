@@ -144,3 +144,8 @@ The first command plays a built-in decaying click. A supplied file must
 be mono, 16-bit signed PCM at 24 kHz with 2–720 samples. Start and end at
 zero and keep the samples balanced around zero. Strength maps to the evdev
 effect magnitude. The sample length controls the one-shot payload.
+
+Run `play-waveform.py --gui` with Fedora's GTK 4 and PyGObject installed
+to compare three click waveforms at the same strength. The packaged
+`org.cerro.Haptics.desktop` entry expects the script at
+`/usr/local/bin/cerro-haptic-waveform`.
