@@ -1,0 +1,191 @@
+--- a/src/mm-bearer-qmi.c
++++ b/src/mm-bearer-qmi.c
+@@ -47,6 +47,7 @@
+     /* Cancellables available during a connection attempt */
+     GCancellable *ongoing_connect_user_cancellable;
+     GCancellable *ongoing_connect_network_cancellable;
++    gboolean      cerro_rebuilding_pdn;
+ 
+     /* State kept while connected */
+     MMPortQmi *qmi;
+@@ -500,6 +501,7 @@
+     MMPort      *data;
+     MMPortQmi   *qmi;
+     guint32      cerro_data_subscription;
++    gboolean     cerro_ipv6_pdn_refused;
+ 
+     MMQmiDataEndpoint  endpoint;
+     gboolean           sio_port_failed;
+@@ -1288,6 +1290,15 @@
+         } else {
+             mm_obj_msg (self, "couldn't start %s network: %s", ctx->running_ipv4 ? "IPv4" : "IPv6", error->message);
+             if (g_error_matches (error, QMI_PROTOCOL_ERROR, QMI_PROTOCOL_ERROR_CALL_FAILED)) {
++                QmiWdsVerboseCallEndReasonType type;
++                gint16 reason;
++
++                if (ctx->running_ipv6 &&
++                    qmi_message_wds_start_network_output_get_verbose_call_end_reason (output, &type, &reason, NULL))
++                    ctx->cerro_ipv6_pdn_refused =
++                        (type == QMI_WDS_VERBOSE_CALL_END_REASON_TYPE_INTERNAL &&
++                         reason == QMI_WDS_VERBOSE_CALL_END_REASON_INTERNAL_PDN_IPV6_CALL_DISALLOWED);
++
+                 g_clear_error (&error);
+                 error = error_from_start_network_output (self, ctx->running_ipv4, output);
+             }
+@@ -1374,6 +1385,7 @@
+ 
+     bearer_status = mm_base_bearer_get_status (MM_BASE_BEARER (self));
+     if (connection_status == QMI_WDS_CONNECTION_STATUS_DISCONNECTED &&
++        !self->priv->cerro_rebuilding_pdn &&
+         bearer_status != MM_BEARER_STATUS_DISCONNECTED &&
+         bearer_status != MM_BEARER_STATUS_DISCONNECTING) {
+         QmiWdsCallEndReason            cer;
+@@ -2943,18 +2955,20 @@
+         if (ctx->packet_data_handle_ipv4) {
+             QmiMessageWdsStopNetworkInput *input;
+ 
+-            common_setup_cleanup_packet_service_status_unsolicited_events (self,
+-                                                                           ctx->client_ipv4,
+-                                                                           FALSE,
+-                                                                           &self->priv->packet_service_status_ipv4_indication_id);
+-            if (self->priv->event_report_ipv4_indication_id)
+-                cleanup_event_report_unsolicited_events (self,
+-                                                         ctx->client_ipv4,
+-                                                         &self->priv->event_report_ipv4_indication_id);
+-
+-            if (self->priv->extended_ipv4_config_change_id) {
+-                g_signal_handler_disconnect (ctx->client_ipv4, self->priv->extended_ipv4_config_change_id);
+-                self->priv->extended_ipv4_config_change_id = 0;
++            if (!self->priv->cerro_rebuilding_pdn) {
++                common_setup_cleanup_packet_service_status_unsolicited_events (self,
++                                                                               ctx->client_ipv4,
++                                                                               FALSE,
++                                                                               &self->priv->packet_service_status_ipv4_indication_id);
++                if (self->priv->event_report_ipv4_indication_id)
++                    cleanup_event_report_unsolicited_events (self,
++                                                             ctx->client_ipv4,
++                                                             &self->priv->event_report_ipv4_indication_id);
++
++                if (self->priv->extended_ipv4_config_change_id) {
++                    g_signal_handler_disconnect (ctx->client_ipv4, self->priv->extended_ipv4_config_change_id);
++                    self->priv->extended_ipv4_config_change_id = 0;
++                }
+             }
+             input = qmi_message_wds_stop_network_input_new ();
+             qmi_message_wds_stop_network_input_set_packet_data_handle (input, ctx->packet_data_handle_ipv4, NULL);
+@@ -3072,6 +3086,106 @@
+ /*****************************************************************************/
+ 
+ static void
++cerro_reconnect_ready (MMBaseBearer *self,
++                       GAsyncResult *res,
++                       GTask        *task)
++{
++    GError *error = NULL;
++    MMBearerConnectResult *result;
++
++    result = connect_finish (self, res, &error);
++    if (result)
++        g_task_return_pointer (task, result, (GDestroyNotify)mm_bearer_connect_result_unref);
++    else
++        g_task_return_error (task, error);
++    g_object_unref (task);
++}
++
++static void
++cerro_disconnect_for_retry_ready (MMBaseBearer *self,
++                                  GAsyncResult *res,
++                                  GTask        *task)
++{
++    MMBearerQmi *qmi = MM_BEARER_QMI (self);
++    GError *error = NULL;
++
++    qmi->priv->cerro_rebuilding_pdn = FALSE;
++    if (!disconnect_finish (self, res, &error)) {
++        if (qmi->priv->packet_data_handle_ipv4) {
++            mm_obj_warn (self, "couldn't stop the initial IPv4 PDN: %s", error->message);
++            g_clear_error (&error);
++            g_task_return_pointer (task,
++                                   mm_bearer_connect_result_ref (g_task_get_task_data (task)),
++                                   (GDestroyNotify)mm_bearer_connect_result_unref);
++        } else
++            g_task_return_error (task, error);
++        g_object_unref (task);
++        return;
++    }
++
++    if (g_task_return_error_if_cancelled (task)) {
++        g_object_unref (task);
++        return;
++    }
++
++    _connect (self, g_task_get_cancellable (task),
++              (GAsyncReadyCallback)cerro_reconnect_ready, task);
++}
++
++static void
++cerro_first_connect_ready (MMBaseBearer *self,
++                           GAsyncResult *res,
++                           GTask        *task)
++{
++    ConnectContext *ctx = g_task_get_task_data (G_TASK (res));
++    MMBearerConnectResult *result;
++    GError *error = NULL;
++
++    result = connect_finish (self, res, &error);
++    if (!result) {
++        g_task_return_error (task, error);
++        g_object_unref (task);
++        return;
++    }
++
++    if (ctx->cerro_data_subscription == CERRO_SUBSCRIPTION_PRIMARY &&
++        ctx->ipv4 && ctx->ipv6 && ctx->ipv4_config && !ctx->ipv6_config &&
++        ctx->cerro_ipv6_pdn_refused && !g_cancellable_is_cancelled (g_task_get_cancellable (task))) {
++        /* A new IPv6 client alone inherits the initial IPv4-only PDN.
++         * Release it through the ordinary disconnect path before retrying. */
++        mm_obj_msg (self, "rebuilding the primary PDN once after an IPv4-only first connection");
++        g_task_set_task_data (task, result, (GDestroyNotify)mm_bearer_connect_result_unref);
++        /* Keep IPv4 monitoring if the modem refuses the stop request. */
++        MM_BEARER_QMI (self)->priv->cerro_rebuilding_pdn = TRUE;
++        disconnect (self, (GAsyncReadyCallback)cerro_disconnect_for_retry_ready, task);
++        return;
++    }
++
++    g_task_return_pointer (task, result, (GDestroyNotify)mm_bearer_connect_result_unref);
++    g_object_unref (task);
++}
++
++static void
++connect_with_cerro_pdn_rebuild (MMBaseBearer        *self,
++                                GCancellable        *cancellable,
++                                GAsyncReadyCallback  callback,
++                                gpointer             user_data)
++{
++    GTask *task;
++
++    if (g_strcmp0 (g_getenv ("MM_CERRO_QMI_DDS"), "1") != 0) {
++        _connect (self, cancellable, callback, user_data);
++        return;
++    }
++
++    task = g_task_new (self, cancellable, callback, user_data);
++    g_task_set_check_cancellable (task, FALSE);
++    _connect (self, cancellable, (GAsyncReadyCallback)cerro_first_connect_ready, task);
++}
++
++/*****************************************************************************/
++
++static void
+ report_connection_status (MMBaseBearer             *_self,
+                           MMBearerConnectionStatus  status,
+                           const GError             *connection_error)
+@@ -3143,7 +3257,7 @@
+     /* Virtual methods */
+     object_class->dispose = dispose;
+ 
+-    base_bearer_class->connect = _connect;
++    base_bearer_class->connect = connect_with_cerro_pdn_rebuild;
+     base_bearer_class->connect_finish = connect_finish;
+     base_bearer_class->disconnect = disconnect;
+     base_bearer_class->disconnect_finish = disconnect_finish;

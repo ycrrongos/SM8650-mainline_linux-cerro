@@ -101,4 +101,11 @@ the modem profile ID both passed IPv6 HTTPS. The very first connection
 after boot still saw a modem refusal. An immediate retry of the same
 IPv6 request also failed. Temporarily changing the initial attach to
 3GNET produced a global IPv6 address but no end-to-end IPv6 transfer.
-The original attach list and ModemManager r6 remain the supported baseline.
+The original attach list was restored after that test.
+
+The Cerro-specific ModemManager r9 build handles this modem response by
+releasing the initial IPv4-only PDN and rebuilding the bearer once within
+activation. The SIM1 boot test transferred IPv4 and IPv6 HTTPS without a
+manual reconnect. The SIM2 IPv4 profile and the stored modem attach list
+remain in use. A separate early startup retry of the Cerro data selector
+was observed and still needs investigation.
