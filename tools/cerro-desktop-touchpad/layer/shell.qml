@@ -12,6 +12,10 @@ ShellRoot {
     property date now: new Date()
     property bool sound: false
     property string wallpaperUrl: ""
+    property real keyboardSplit: 0
+    property var keyboardKeys: []
+    property var keyboardModifiers: []
+    property int highlightedKey: -1
     signal touchRipple(real x, real y)
     property double lastSound: 0
     readonly property int dwell: Math.max(2000, Number(Quickshell.env("CERRO_CAROUSEL_MS")) || 12000)
@@ -71,6 +75,20 @@ ShellRoot {
         command: ["python3", Quickshell.shellPath("../ripple-stream.py")]
         stdout: SplitParser {
             onRead: line => {
+                if (line.startsWith("{")) {
+                    try {
+                        const state = JSON.parse(line);
+                        if (state.keys !== undefined)
+                            root.keyboardKeys = state.keys;
+                        root.keyboardSplit = state.split;
+                        root.keyboardModifiers = state.modifiers;
+                        if (state.key !== null && state.pressed) {
+                            root.highlightedKey = state.key;
+                            keyFlash.restart();
+                        }
+                    } catch (_) {}
+                    return;
+                }
                 const point = line.trim().split(" ").map(Number);
                 if (point.length === 2 && point.every(Number.isFinite)) {
                     root.touchRipple(point[0], point[1]);
@@ -79,6 +97,12 @@ ShellRoot {
                 }
             }
         }
+    }
+
+    Timer {
+        id: keyFlash
+        interval: 150
+        onTriggered: root.highlightedKey = -1
     }
 
     component PanelText: Text {
@@ -159,9 +183,28 @@ ShellRoot {
                 function onTouchRipple(x, y) { waterRipple.splash(x, y); }
             }
 
+            KeyboardGrid {
+                id: keyboardBackground
+                visible: root.keyboardSplit > 0
+                width: parent.width * root.keyboardSplit
+                height: parent.height
+                keys: root.keyboardKeys
+                modifiers: root.keyboardModifiers
+                highlightedKey: root.highlightedKey
+            }
+
+            Rectangle {
+                visible: root.keyboardSplit > 0
+                x: keyboardBackground.width
+                width: 1
+                height: parent.height
+                color: "#55647b"
+            }
+
             Item {
                 id: composition
-                anchors.fill: parent
+                anchors { fill: parent; leftMargin: keyboardBackground.width }
+                clip: root.keyboardSplit > 0
                 property int page: 0
                 property int effect: -1
                 property real shiftX: 0
@@ -181,7 +224,7 @@ ShellRoot {
 
                 Timer {
                     interval: root.dwell
-                    running: true
+                    running: root.keyboardSplit === 0
                     repeat: true
                     onTriggered: composition.advance()
                 }
@@ -218,6 +261,7 @@ ShellRoot {
 
                 Item {
                     id: pageContent
+                    visible: root.keyboardSplit === 0
                     width: parent.width - 108
                     height: parent.height * (root.sound ? 0.58 : 0.84)
                     anchors.centerIn: parent
@@ -236,7 +280,7 @@ ShellRoot {
 
                 Item {
                     id: spectrum
-                    visible: root.sound
+                    visible: root.sound && root.keyboardSplit === 0
                     width: parent.width - 108
                     height: parent.height * 0.24
                     anchors.horizontalCenter: parent.horizontalCenter

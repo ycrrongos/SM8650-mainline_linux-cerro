@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Expose the relay's bounded datagrams as lines for Quickshell."""
 import fcntl
+import json
 import os
 from pathlib import Path
 import signal
@@ -18,8 +19,16 @@ def main():
                 receiver.bind(str(path))
                 path.chmod(0o600)
                 while True:
+                    message = receiver.recv(8192)
+                    if message.startswith(b"{"):
+                        try:
+                            state = json.loads(message)
+                        except (ValueError, UnicodeError):
+                            continue
+                        print(json.dumps(state, separators=(",", ":")), flush=True)
+                        continue
                     try:
-                        x, y = map(float, receiver.recv(64).split())
+                        x, y = map(float, message.split())
                     except ValueError:
                         continue
                     if 0 <= x <= 1 and 0 <= y <= 1:
