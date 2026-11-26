@@ -12,7 +12,11 @@ ShellRoot {
     property date now: new Date()
     property bool sound: false
     property string wallpaperUrl: ""
-    property real keyboardSplit: 0
+    property bool keyboardMode: false
+    property bool switchVisible: false
+    property real keyboardTop: 0
+    property real switchLeft: 1
+    property real switchBottom: 0
     property var keyboardKeys: []
     property var keyboardModifiers: []
     property int highlightedKey: -1
@@ -71,6 +75,11 @@ ShellRoot {
         }
     }
     Process {
+        running: Quickshell.env("CERRO_TOUCHPAD_TRAY") === "1"
+        command: ["python3", Quickshell.shellPath("../tray.py")]
+    }
+
+    Process {
         running: true
         command: ["python3", Quickshell.shellPath("../ripple-stream.py")]
         stdout: SplitParser {
@@ -80,7 +89,11 @@ ShellRoot {
                         const state = JSON.parse(line);
                         if (state.keys !== undefined)
                             root.keyboardKeys = state.keys;
-                        root.keyboardSplit = state.split;
+                        root.keyboardMode = state.keyboard;
+                        root.switchVisible = state.switch;
+                        root.keyboardTop = state.keyboardTop;
+                        root.switchLeft = state.switchLeft;
+                        root.switchBottom = state.switchBottom;
                         root.keyboardModifiers = state.modifiers;
                         if (state.key !== null && state.pressed) {
                             root.highlightedKey = state.key;
@@ -184,27 +197,37 @@ ShellRoot {
             }
 
             KeyboardGrid {
-                id: keyboardBackground
-                visible: root.keyboardSplit > 0
-                width: parent.width * root.keyboardSplit
-                height: parent.height
+                visible: root.keyboardMode
+                y: parent.height * root.keyboardTop
+                width: parent.width
+                height: parent.height - y
                 keys: root.keyboardKeys
                 modifiers: root.keyboardModifiers
                 highlightedKey: root.highlightedKey
             }
 
             Rectangle {
-                visible: root.keyboardSplit > 0
-                x: keyboardBackground.width
-                width: 1
-                height: parent.height
-                color: "#55647b"
+                z: 1
+                visible: root.switchVisible
+                x: parent.width * root.switchLeft + 4
+                y: 4
+                width: parent.width - x - 4
+                height: parent.height * root.switchBottom - 8
+                radius: Math.min(10, height / 3)
+                color: "#80171727"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: root.keyboardMode ? "触摸板" : "键盘"
+                    color: root.ink
+                    font.pixelSize: Math.max(1, Math.min(parent.height * 0.48, parent.width / 4))
+                }
             }
 
             Item {
                 id: composition
-                anchors { fill: parent; leftMargin: keyboardBackground.width }
-                clip: root.keyboardSplit > 0
+                anchors.fill: parent
+                visible: !root.keyboardMode
                 property int page: 0
                 property int effect: -1
                 property real shiftX: 0
@@ -224,7 +247,7 @@ ShellRoot {
 
                 Timer {
                     interval: root.dwell
-                    running: root.keyboardSplit === 0
+                    running: !root.keyboardMode
                     repeat: true
                     onTriggered: composition.advance()
                 }
@@ -261,7 +284,7 @@ ShellRoot {
 
                 Item {
                     id: pageContent
-                    visible: root.keyboardSplit === 0
+                    visible: !root.keyboardMode
                     width: parent.width - 108
                     height: parent.height * (root.sound ? 0.58 : 0.84)
                     anchors.centerIn: parent
@@ -280,7 +303,7 @@ ShellRoot {
 
                 Item {
                     id: spectrum
-                    visible: root.sound && root.keyboardSplit === 0
+                    visible: root.sound && !root.keyboardMode
                     width: parent.width - 108
                     height: parent.height * 0.24
                     anchors.horizontalCenter: parent.horizontalCenter

@@ -3,8 +3,10 @@
 import argparse
 import errno
 import json
+import os
 import select
 import socket
+import stat
 import sys
 import time
 from contextlib import ExitStack
@@ -13,7 +15,7 @@ from pathlib import Path
 
 from evdev import AbsInfo, InputDevice, UInput, ecodes as E
 
-from keyboard import KEYS, SPLIT, Keyboard, key_at, physical_keyboard
+from keyboard import KEYS, KEYBOARD_TOP, SWITCH_LEFT, SWITCH_BOTTOM, Keyboard, key_at, on_switch, physical_keyboard
 
 NAME = "Cerro Desktop Touchpad"
 TOOLS = (E.BTN_TOOL_FINGER, E.BTN_TOOL_DOUBLETAP,
@@ -45,8 +47,10 @@ class Ripple:
         except OSError:
             pass
 
-    def layout(self, split, keyboard, include_keys):
-        data = {"split": SPLIT if split else 0, "key": keyboard.last_key,
+    def layout(self, keyboard_mode, switch_visible, keyboard, include_keys):
+        data = {"keyboard": keyboard_mode, "switch": switch_visible, "key": keyboard.last_key,
+                "keyboardTop": KEYBOARD_TOP, "switchLeft": SWITCH_LEFT,
+                "switchBottom": SWITCH_BOTTOM,
                 "modifiers": sorted(keyboard.modifiers), "pressed": keyboard.changed}
         if include_keys:
             data["keys"] = KEYS
@@ -79,12 +83,15 @@ class Touchpad:
         self.contacts = {}
         self.active = {}
         self.slot = 0
-        self.split = False
+        self.keyboard_mode = False
+        self.switch_visible = False
+        self.pending_toggle = False
+        self.speed = 1.0
         self.keyboard = None
         width, height = (157, 71) if rotation in (90, 270) else (71, 157)
         self.width, self.height = width * 20, height * 20
-        horizontal = AbsInfo(0, 0, self.width, 0, 0, 20)
-        vertical = AbsInfo(0, 0, self.height, 0, 0, 20)
+        horizontal = AbsInfo(0, 0, self.width * 2, 0, 0, 20)
+        vertical = AbsInfo(0, 0, self.height * 2, 0, 0, 20)
         self.capabilities = {
             E.EV_KEY: [E.BTN_TOUCH, E.BTN_LEFT, *TOOLS],
             E.EV_ABS: [
@@ -106,12 +113,13 @@ class Touchpad:
 
     def position(self, contact):
         x, y = self.normalized(contact)
-        if self.split:
-            x = max(0, (x - SPLIT) / (1 - SPLIT))
-        return round(x * self.width), round(y * self.height)
+        return (round((1 + (x - 0.5) * self.speed) * self.width),
+                round((1 + (y - 0.5) * self.speed) * self.height))
 
     def release(self, slot, allow_key):
         contact = self.contacts.pop(slot, None)
+        if allow_key and contact is not None and contact.route == "switch":
+            self.pending_toggle = True
         if allow_key and contact is not None and contact.route == "keyboard":
             if contact.key is not None:
                 self.keyboard.press(contact.key)
@@ -119,10 +127,14 @@ class Touchpad:
     def route(self, contact):
         x, y = self.normalized(contact)
         if contact.route is None:
-            if self.split and x < SPLIT:
+            if self.switch_visible and on_switch(x, y):
+                contact.route = "switch"
+            elif self.keyboard_mode:
                 contact.route, contact.key = "keyboard", key_at(x, y)
             else:
                 contact.route = "touchpad"
+        elif contact.route == "switch" and not on_switch(x, y):
+            contact.route = "ignored"
         elif contact.route == "keyboard" and key_at(x, y) != contact.key:
             # A touch that slides away from its key never types on release.
             contact.key = None
@@ -161,24 +173,37 @@ class Touchpad:
             self.ripple.update(self.normalized(primary) if ready else None)
         self.active = {slot: contact.tracking_id for slot, contact in ready.items()}
 
-    def relay(self, source, output, connector, heartbeat):
+    def relay(self, source, output, connector, heartbeat, speed_file=None):
         next_detection = 0
         needs_keyboard = False
         while connector.read_text().strip() == "connected":
             if heartbeat is not None and not fresh(heartbeat):
                 return
             now = time.monotonic()
-            refresh = self.keyboard is not None and now >= next_detection
-            if refresh:
+            refresh = now >= next_detection
+            if refresh and self.keyboard:
                 needs_keyboard = not physical_keyboard()
+            if not self.contacts and now >= next_detection:
+                if speed_file is not None:
+                    try:
+                        self.speed = read_speed(speed_file)
+                    except (OSError, ValueError):
+                        pass
+            if refresh:
                 next_detection = now + 0.75
-            mode_changed = self.keyboard is not None and not self.contacts and self.split != needs_keyboard
-            if mode_changed:
-                self.split = needs_keyboard
-                self.keyboard.modifiers.clear()
-                self.keyboard.last_key = None
+            mode_changed = False
+            if self.keyboard and not self.contacts:
+                mode = needs_keyboard and (self.keyboard_mode != self.pending_toggle)
+                mode_changed = mode != self.keyboard_mode or needs_keyboard != self.switch_visible
+                self.pending_toggle = False
+                self.switch_visible = needs_keyboard
+                if mode != self.keyboard_mode:
+                    self.keyboard_mode = mode
+                    self.keyboard.modifiers.clear()
+                    self.keyboard.last_key = None
             if self.ripple and self.keyboard and (refresh or mode_changed or self.keyboard.changed):
-                self.ripple.layout(self.split, self.keyboard, refresh or mode_changed)
+                self.ripple.layout(self.keyboard_mode, self.switch_visible, self.keyboard,
+                                   refresh or mode_changed)
                 self.keyboard.changed = False
             if not select.select([source.fd], [], [], 0.12)[0]:
                 continue
@@ -212,6 +237,19 @@ class Touchpad:
                     contact.y = event.value
 
 
+def read_speed(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError("Speed setting must be a regular file")
+        speed = int(os.read(fd, 16))
+    finally:
+        os.close(fd)
+    if not 50 <= speed <= 200:
+        raise ValueError("Speed outside 50–200%")
+    return speed / 100
+
+
 def fresh(path):
     try:
         return 0 <= time.time() - path.stat().st_mtime < 3
@@ -226,6 +264,7 @@ def main():
     parser.add_argument("--connector", type=Path,
                         default=Path("/sys/class/drm/card0-DP-1/status"))
     parser.add_argument("--heartbeat", type=Path)
+    parser.add_argument("--speed-file", type=Path)
     parser.add_argument("--ripple-socket", type=Path)
     parser.add_argument("--auto-keyboard", action="store_true")
     args = parser.parse_args()
@@ -254,7 +293,7 @@ def main():
                     else:
                         touchpad.keyboard = Keyboard(keyboard)
                 devices.enter_context(source.grab_context())
-                touchpad.relay(source, output, args.connector, args.heartbeat)
+                touchpad.relay(source, output, args.connector, args.heartbeat, args.speed_file)
     finally:
         source.close()
 

@@ -56,7 +56,10 @@ def run(args, runtime):
     source = Path(__file__).resolve().with_name("layer")
     readiness = runtime / "cerro-layer-ready"
     readiness.unlink(missing_ok=True)
-    shell = subprocess.Popen(["qs", "-p", str(source)])
+    shell = subprocess.Popen(
+        ["qs", "-p", str(source)],
+        env={**os.environ, "CERRO_TOUCHPAD_TRAY": "1" if args.relay else "0"},
+    )
     separated = False
     try:
         deadline = time.monotonic() + 5

@@ -42,3 +42,9 @@ file descriptor. Keep the original display layout until those paths exist.
 - Simulated connector loss exited the guarded relay successfully.
 - Quickshell loaded the preview and Niri listed its window. Cava emitted a
   32-band frame at idle. Active playback and lyrics have not been tested.
+
+Fedora external display mode starts as a full-screen touchpad. With no USB or
+Bluetooth keyboard, use the upper-right button to switch between touchpad and
+full-screen keyboard. The **Cerro 触摸板** tray icon opens the saved speed slider
+(50–200%, default 100%). The tray requires a StatusNotifier host, GTK 3 and
+PyGObject. Install the update with `install-split-keyboard.sh`.

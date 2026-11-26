@@ -4,8 +4,13 @@ from pathlib import Path
 
 from evdev import ecodes as E
 
-# Each row fills the left 76% of the landscape panel.
-SPLIT = 0.76
+KEYBOARD_TOP = 0.12
+SWITCH_LEFT = 0.88
+SWITCH_BOTTOM = 0.11
+
+
+def on_switch(x, y):
+    return x >= SWITCH_LEFT and y < SWITCH_BOTTOM
 ROWS = (
     (("Esc", "ESC", 1.1), *[(s, s, 1) for s in "1234567890"],
      ("−", "MINUS", 1), ("=", "EQUAL", 1), ("⌫", "BACKSPACE", 1.4)),
@@ -27,9 +32,9 @@ def layout():
         x = 0
         total = sum(weight for _, _, weight in definitions)
         for label, name, weight in definitions:
-            width = weight / total * SPLIT
+            width = weight / total
             keys.append(dict(label=label, code=E.ecodes["KEY_" + name],
-                             x=x / SPLIT, y=row / len(ROWS), w=width / SPLIT,
+                             x=x, y=row / len(ROWS), w=width,
                              h=1 / len(ROWS)))
             x += width
     return keys
@@ -39,8 +44,9 @@ KEYS = layout()
 
 
 def key_at(x, y):
+    y = (y - KEYBOARD_TOP) / (1 - KEYBOARD_TOP)
     return next((key["code"] for key in KEYS
-                 if key["x"] <= x / SPLIT < key["x"] + key["w"]
+                 if key["x"] <= x < key["x"] + key["w"]
                  and key["y"] <= y < key["y"] + key["h"]), None)
 
 

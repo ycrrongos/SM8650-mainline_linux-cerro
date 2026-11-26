@@ -1,11 +1,10 @@
 import QtQuick
 
-Rectangle {
+Item {
     id: grid
     required property var keys
     required property var modifiers
     required property int highlightedKey
-    color: "#dd171727"
 
     Repeater {
         model: grid.visible ? grid.keys : []
@@ -19,7 +18,7 @@ Rectangle {
             width: grid.width * modelData.w - 4
             height: grid.height * modelData.h - 4
             radius: Math.min(12, height * 0.16)
-            color: selected ? "#526482" : "#28273c"
+            color: selected ? "#cc526482" : "#8828273c"
 
             Text {
                 anchors.centerIn: parent
