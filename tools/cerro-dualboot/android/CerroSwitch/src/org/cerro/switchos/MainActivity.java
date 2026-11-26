@@ -13,6 +13,8 @@ public class MainActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private TextView status, details;
     private Spinner images;
+    private Switch verifyImage;
+    private static final String SKIP_PREVIEW_SHA = "--skip-preview-sha";
     private Button refresh, switchButton, recoverButton;
     private boolean reading = false, visible = false, writingRequested = false;
     private final List<String> names = new ArrayList<>();
@@ -42,6 +44,12 @@ public class MainActivity extends Activity {
         root.addView(text("把已打包的 Linux boot .img 放到这个目录，再选择镜像。支持多个文件。", 15));
         images = new Spinner(this); images.setMinimumHeight(dp(56)); root.addView(images);
         refresh = new Button(this); refresh.setText("授权 root 并刷新镜像"); root.addView(refresh);
+        verifyImage = new Switch(this);
+        verifyImage.setText("校验所选镜像的 SHA256");
+        verifyImage.setChecked(true);
+        verifyImage.setMinHeight(dp(48));
+        root.addView(verifyImage);
+        root.addView(text("关闭后跳过预览 SHA256 比对。备份和写入读回仍会校验。", 14));
         switchButton = new Button(this); switchButton.setText("预览并切换到 Linux"); root.addView(switchButton);
         recoverButton = new Button(this); recoverButton.setText("恢复 Android（用于中断恢复）"); root.addView(recoverButton);
         details = text("应用构建版，尚未在手机上实测切换。\n备份保存在 Linux 分区的私有目录；无有效清单、校验不符或写入失败会停止。", 14);
@@ -55,7 +63,7 @@ public class MainActivity extends Activity {
     @Override protected void onPause() { visible = false; handler.removeCallbacks(poll); super.onPause(); }
     private void enabled() {
         boolean available = !reading && !writingRequested && !SwitchService.busy.get();
-        refresh.setEnabled(available); images.setEnabled(available);
+        refresh.setEnabled(available); images.setEnabled(available); verifyImage.setEnabled(available);
         switchButton.setEnabled(available && !names.isEmpty()); recoverButton.setEnabled(available);
     }
     private interface Work { void run() throws Exception; }
@@ -84,11 +92,17 @@ public class MainActivity extends Activity {
     private void previewLinux() {
         int index = images.getSelectedItemPosition(); if (index < 0 || index >= names.size()) return;
         String image = "/data/media/0/linuxkernel/" + names.get(index);
+        boolean verify = verifyImage.isChecked();
         async(() -> {
-            String plan = RootBackend.run(this, null, "plan-linux", image);
-            String sha = "";
-            for (String line : plan.split("\n")) if (line.startsWith("SHA256=")) sha = line.substring(7);
-            if (!sha.matches("[0-9a-f]{64}")) throw new Exception("未取得有效镜像 SHA256，未写入。");
+            String plan = verify ? RootBackend.run(this, null, "plan-linux", image)
+                    : RootBackend.run(this, null, "plan-linux", image, SKIP_PREVIEW_SHA);
+            String sha = SKIP_PREVIEW_SHA;
+            if (verify) {
+                sha = "";
+                for (String line : plan.split("\n"))
+                    if (line.startsWith("SHA256=")) sha = line.substring(7).trim();
+                if (!sha.matches("[0-9a-f]{64}")) throw new Exception("未取得有效镜像 SHA256，未写入。");
+            }
             final String digest = sha;
             handler.post(() -> {
                 status.setText("计划已读取，尚未写入分区"); details.setText(plan);

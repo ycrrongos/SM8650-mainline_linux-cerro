@@ -10,7 +10,12 @@ ACTION=${1:-status}
 MOUNT_POINT= LOCKED=0 STATE= OS= SLOT= OTHER= SERIAL= ROOT_UUID= PARTDIR=
 fail() { echo "错误：$*" >&2; exit 1; }
 log() { echo "$*"; }
-hash() { sha256sum "$1" | awk '{print $1}'; }
+hash() {
+ hash_output=$(sha256sum < "$1") || return 1
+ digest=${hash_output%% *}
+ hex_sha "$digest" || return 1
+ printf '%s\n' "$digest"
+}
 size() { blockdev --getsize64 "$1"; }
 part() {
  case "$1" in boot_a|boot_b|dtbo_a|dtbo_b) ;; *) fail '分区不在白名单';; esac
@@ -159,7 +164,7 @@ validate_image() {
  case "$parent" in /storage/emulated/0/linuxkernel|/data/media/0/linuxkernel|/mnt/user/0/emulated/0/linuxkernel|/mnt/runtime/*/emulated/0/linuxkernel) ;; *) fail '镜像目录解析不符';; esac
  [ "$(stat -c %s "$image")" = "$BOOT_SIZE" ] || fail '镜像必须完整填充为 96MiB'
  linux_header "$image"
- IMAGE=$image; IMAGE_SHA=$(hash "$image")
+ IMAGE=$image
 }
 backup_all() {
  label=$1
@@ -196,18 +201,35 @@ plan_linux() {
  android_source; validate_image "$2"
  log "运行系统：Android；活动槽：$SLOT；Android 缓存槽：$OTHER"
  log "镜像：${IMAGE##*/}"
- log "SHA256=$IMAGE_SHA"
+ case "${3:-}" in
+  '') IMAGE_SHA=$(hash "$IMAGE") || fail '未取得有效镜像 SHA256'; log "SHA256=$IMAGE_SHA";;
+  --skip-preview-sha) log '已关闭镜像预览 SHA256；暂存及写入后仍会校验。';;
+  *) fail '未知镜像校验选项';;
+ esac
  log "先完整备份两槽 boot/dtbo；将 Android 两文件缓存至 $OTHER，清空 $SLOT 的 DTBO，写 Linux boot 并重启。活动槽不变。"
 }
+expect_preview_sha() {
+ actual=$(hash "$1") || fail '未取得有效镜像 SHA256'
+ [ "$actual" = "$2" ] || fail '镜像自预览后已改变'
+}
 switch_linux() {
- android_source; validate_image "$2"; expected=${3:-}; hex_sha "$expected" || fail '请先预览并确认镜像 SHA'
- [ "$IMAGE_SHA" = "$expected" ] || fail '镜像自预览后已改变'
- ANDROID_BOOT=$(hash "$(part boot_$SLOT)"); ANDROID_DTBO=$(hash "$(part dtbo_$SLOT)"); LINUX_BOOT=$IMAGE_SHA
+ android_source; validate_image "$2"; expected=${3:-}
+ if [ "$expected" != --skip-preview-sha ]; then
+  hex_sha "$expected" || fail '请先预览并确认镜像 SHA'
+  expect_preview_sha "$IMAGE" "$expected"
+ fi
+ ANDROID_BOOT=$(hash "$(part boot_$SLOT)"); ANDROID_DTBO=$(hash "$(part dtbo_$SLOT)")
  backup_all Android
  staged=$STATE/backups/$RUN/linux_boot_slot_$SLOT.img
  cp "$IMAGE" "$staged" || fail '镜像暂存失败'; chmod 600 "$staged"
  [ "$(stat -c %s "$staged")" = "$BOOT_SIZE" ] || fail '暂存镜像不完整'
- expect "$staged" "$LINUX_BOOT"; linux_header "$staged"
+ linux_header "$staged"
+ if [ "$expected" != --skip-preview-sha ]; then
+  expect_preview_sha "$staged" "$expected"
+  LINUX_BOOT=$expected
+ else
+  LINUX_BOOT=$(hash "$staged") || fail '无法校验暂存镜像'
+ fi
  expect "$(part boot_$SLOT)" "$ANDROID_BOOT"; expect "$(part dtbo_$SLOT)" "$ANDROID_DTBO"
  verify_backup_scene
  write_state prepared

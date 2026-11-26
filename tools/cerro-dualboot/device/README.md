@@ -8,13 +8,14 @@
    文件管理器显示为“内部存储/linuxkernel”；root 后端对应 `/data/media/0/linuxkernel`。
    必须是完整96MiB、header v2/stub127且带Cerro标记的boot镜像，不能放裸`Image`或压缩包。
 2. 安装构建的 `cerro-system-switch-android-v2.apk`。打开“系统切换”，通过 KernelSU/Magisk 授予 root。
-3. 点击刷新，选择文件，预览文件名、SHA256、当前槽与缓存槽，再明确确认切换。
+3. 点击刷新并选择镜像，再点击预览。默认开启「校验所选镜像的 SHA256」。
+   需要跳过预览 SHA256 时，可关闭开关再预览；镜像格式、备份和分区写入读回仍要校验。
 4. 应用先保存两槽 boot/dtbo 原件和SHA，再复制当前 Android 两文件到非活动槽。
    复制读回通过后，清空当前槽DTBO、刷入所选Linux boot、逐个读回，最后重启。
 
 根分区和原 Android 必须已由用户正确准备，bootloader已有可用解锁启动路径。
 应用不安装Linux rootfs、不调整分区，不刷ABL/XBL/vendor_boot/vbmeta/userdata，不改变活动槽。
-输入镜像先复制到root私有暂存，复核预览SHA，避免共享存储文件在写入过程中被修改。
+输入镜像写入前先复制到 root 私有暂存。开启校验时会复核预览时的 SHA256；关闭时以暂存镜像 SHA256 为准，用于清单与写入读回。
 活动boot已带Linux标记或活动DTBO已清零时，拒绝再次拿它覆盖Android缓存。
 
 Android写入使用前台服务和唤醒锁；离开界面不自动重放写入操作。
