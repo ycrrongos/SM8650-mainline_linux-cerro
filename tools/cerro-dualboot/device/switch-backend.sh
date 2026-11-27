@@ -164,7 +164,7 @@ validate_image() {
  case "$parent" in /storage/emulated/0/linuxkernel|/data/media/0/linuxkernel|/mnt/user/0/emulated/0/linuxkernel|/mnt/runtime/*/emulated/0/linuxkernel) ;; *) fail '镜像目录解析不符';; esac
  [ "$(stat -c %s "$image")" = "$BOOT_SIZE" ] || fail '镜像必须完整填充为 96MiB'
  linux_header "$image"
- IMAGE=$image
+ IMAGE=$image; IMAGE_SHA=$(hash "$image")
 }
 backup_all() {
  label=$1
@@ -201,35 +201,18 @@ plan_linux() {
  android_source; validate_image "$2"
  log "运行系统：Android；活动槽：$SLOT；Android 缓存槽：$OTHER"
  log "镜像：${IMAGE##*/}"
- case "${3:-}" in
-  '') IMAGE_SHA=$(hash "$IMAGE") || fail '未取得有效镜像 SHA256'; log "SHA256=$IMAGE_SHA";;
-  --skip-preview-sha) log '已关闭镜像预览 SHA256；暂存及写入后仍会校验。';;
-  *) fail '未知镜像校验选项';;
- esac
+ log "SHA256=$IMAGE_SHA"
  log "先完整备份两槽 boot/dtbo；将 Android 两文件缓存至 $OTHER，清空 $SLOT 的 DTBO，写 Linux boot 并重启。活动槽不变。"
 }
-expect_preview_sha() {
- actual=$(hash "$1") || fail '未取得有效镜像 SHA256'
- [ "$actual" = "$2" ] || fail '镜像自预览后已改变'
-}
 switch_linux() {
- android_source; validate_image "$2"; expected=${3:-}
- if [ "$expected" != --skip-preview-sha ]; then
-  hex_sha "$expected" || fail '请先预览并确认镜像 SHA'
-  expect_preview_sha "$IMAGE" "$expected"
- fi
- ANDROID_BOOT=$(hash "$(part boot_$SLOT)"); ANDROID_DTBO=$(hash "$(part dtbo_$SLOT)")
+ android_source; validate_image "$2"; expected=${3:-}; hex_sha "$expected" || fail '请先预览并确认镜像 SHA'
+ [ "$IMAGE_SHA" = "$expected" ] || fail '镜像自预览后已改变'
+ ANDROID_BOOT=$(hash "$(part boot_$SLOT)"); ANDROID_DTBO=$(hash "$(part dtbo_$SLOT)"); LINUX_BOOT=$IMAGE_SHA
  backup_all Android
  staged=$STATE/backups/$RUN/linux_boot_slot_$SLOT.img
  cp "$IMAGE" "$staged" || fail '镜像暂存失败'; chmod 600 "$staged"
  [ "$(stat -c %s "$staged")" = "$BOOT_SIZE" ] || fail '暂存镜像不完整'
- linux_header "$staged"
- if [ "$expected" != --skip-preview-sha ]; then
-  expect_preview_sha "$staged" "$expected"
-  LINUX_BOOT=$expected
- else
-  LINUX_BOOT=$(hash "$staged") || fail '无法校验暂存镜像'
- fi
+ expect "$staged" "$LINUX_BOOT"; linux_header "$staged"
  expect "$(part boot_$SLOT)" "$ANDROID_BOOT"; expect "$(part dtbo_$SLOT)" "$ANDROID_DTBO"
  verify_backup_scene
  write_state prepared
@@ -242,25 +225,66 @@ switch_linux() {
  verify_cache; expect "$(part dtbo_$SLOT)" "$(zero_hash)"; write_state linux_ready
  finish_reboot
 }
+restore_mode() {
+ case "${1:-}" in
+  '') RESTORE_MODE=verify;;
+  --skip-cache-sha) [ "$OS" = linux ] || fail '此选项仅用于 Linux'; RESTORE_MODE=use-current;;
+  *) fail '未知 Android 缓存校验选项';;
+ esac
+}
+active_is_android() {
+ [ "$(hash "$(part boot_$SLOT)")" = "$ANDROID_BOOT" ] &&
+ [ "$(hash "$(part dtbo_$SLOT)")" = "$ANDROID_DTBO" ]
+}
+resolve_android_cache() {
+ if [ "$RESTORE_MODE" = use-current ]; then
+  cache_boot=$(part boot_$OTHER); cache_dtbo=$(part dtbo_$OTHER)
+  [ "$(head -c8 "$cache_boot")" = 'ANDROID!' ] || fail 'Android 缓存 boot 头无效'
+  if dd if="$cache_boot" bs=4096 count=1 2>/dev/null | grep -aq 'cerro_boot='; then
+   fail '缓存槽是 Cerro Linux，不能作为 Android 恢复'
+  fi
+  dtbo_magic=$(od -An -tx1 -N4 "$cache_dtbo" | tr -d ' \n')
+  [ "$dtbo_magic" = d7b7ab1e ] || fail 'Android 缓存 DTBO 头无效'
+  ANDROID_BOOT=$(hash "$cache_boot") || fail '无法读取 Android boot SHA256'
+  ANDROID_DTBO=$(hash "$cache_dtbo") || fail '无法读取 Android DTBO SHA256'
+ else
+  verify_cache
+ fi
+}
 plan_android() {
- load_state
- if [ "$(hash "$(part boot_$SLOT)")" = "$ANDROID_BOOT" ] && [ "$(hash "$(part dtbo_$SLOT)")" = "$ANDROID_DTBO" ]; then
+ restore_mode "${1:-}"; load_state
+ if active_is_android; then
   log "活动槽 $SLOT 已是清单中的 Android；不重复改写。"
- else verify_cache; log "将已校验的槽 $OTHER Android boot/dtbo 恢复到原活动槽 $SLOT，活动槽不变。"; fi
+ else
+  resolve_android_cache
+  if [ "$RESTORE_MODE" = use-current ]; then
+   log "已关闭清单 SHA256 比对。将使用槽 $OTHER 的现有 Android 缓存，备份及写后读回仍会校验。"
+   log "Android boot SHA256=$ANDROID_BOOT"
+   log "Android DTBO SHA256=$ANDROID_DTBO"
+  fi
+  log "将槽 $OTHER 的 Android boot/dtbo 恢复到原活动槽 $SLOT，活动槽不变。"
+ fi
 }
 switch_android() {
- load_state
- if [ "$(hash "$(part boot_$SLOT)")" = "$ANDROID_BOOT" ] && [ "$(hash "$(part dtbo_$SLOT)")" = "$ANDROID_DTBO" ]; then
+ restore_mode "${1:-}"; load_state
+ if active_is_android; then
   write_state android_ready
   if [ "$OS" = android ]; then log 'Android 已完整恢复；没有写分区。'; return; fi
  else
+  resolve_android_cache
+  if [ "$RESTORE_MODE" = use-current ]; then
+   [ "$ANDROID_BOOT" = "${2:-}" ] && [ "$ANDROID_DTBO" = "${3:-}" ] ||
+    fail 'Android 缓存自预览后已改变，请重新预览'
+  fi
+  # Restore from the private copies just made as part of the labelled backup.
+  oldrun=$RUN; backup_all Linux-pre-restore; restore_dir=$STATE/backups/$RUN; RUN=$oldrun
   verify_cache
-  # Preserve the entire pre-restore scene in a second independently labelled run.
-  oldrun=$RUN; backup_all Linux-pre-restore; RUN=$oldrun
-  verify_cache
+  staged_boot=$restore_dir/boot_slot_$OTHER.img
+  staged_dtbo=$restore_dir/dtbo_slot_$OTHER.img
+  expect "$staged_boot" "$ANDROID_BOOT"; expect "$staged_dtbo" "$ANDROID_DTBO"
   write_state restoring_android
-  copy_part "$(part dtbo_$OTHER)" "$(part dtbo_$SLOT)" "$ANDROID_DTBO"
-  copy_part "$(part boot_$OTHER)" "$(part boot_$SLOT)" "$ANDROID_BOOT"
+  copy_part "$staged_dtbo" "$(part dtbo_$SLOT)" "$ANDROID_DTBO"
+  copy_part "$staged_boot" "$(part boot_$SLOT)" "$ANDROID_BOOT"
   verify_cache; write_state android_ready
  fi
  finish_reboot
@@ -301,6 +325,6 @@ case "$ACTION" in
   [ ! -f "$STATE/state" ] || fail '已有机内清单，拒绝覆盖'
   here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
   python3 "$here/import-host-state.py" "$2" "$STATE" "$SLOT" "$OTHER" "$SERIAL" "$ROOT_UUID" "$PARTDIR" "$BOOT_SIZE" "$DTBO_SIZE";;
- plan-android) plan_android;;
- switch-android) switch_android;;
+ plan-android) plan_android "${2:-}";;
+ switch-android) switch_android "${2:-}" "${3:-}" "${4:-}";;
 esac

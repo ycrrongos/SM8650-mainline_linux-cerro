@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Cerro local same-slot Android restore GUI; backend runs through polkit."""
 import concurrent.futures
-from pathlib import Path
+import re
 import subprocess
 import gi
 
@@ -25,15 +25,21 @@ class App(Gtk.Window):
         title = Gtk.Label(label='Linux → Android', xalign=0)
         title.set_markup('<span size="xx-large" weight="bold">Linux → Android</span>')
         root.pack_start(title, False, False, 0)
-        hint = Gtk.Label(label='从已校验的另一槽恢复 Android 的 boot 和 dtbo。\n保持当前活动槽，全部读回验证后重启。', xalign=0)
+        hint = Gtk.Label(label='从另一槽恢复 Android 的 boot 和 dtbo。\n保持当前活动槽，写入读回通过后重启。', xalign=0)
         hint.set_line_wrap(True)
         root.pack_start(hint, False, False, 0)
         self.status = Gtk.Label(label='点击读取计划后，再确认切换。', xalign=0)
         self.status.set_line_wrap(True)
         root.pack_start(self.status, False, False, 0)
+        self.verify_cache = Gtk.CheckButton(label='比对 Android 缓存与清单的 SHA256')
+        self.verify_cache.set_active(True)
+        root.pack_start(self.verify_cache, False, False, 0)
+        detail = Gtk.Label(label='关闭后使用另一槽的现有缓存。备份和写入读回仍会校验。', xalign=0)
+        detail.set_line_wrap(True)
+        root.pack_start(detail, False, False, 0)
         self.switch = Gtk.Button(label='预览并切换到 Android')
         self.switch.set_size_request(-1, 52)
-        self.switch.connect('clicked', lambda *_: self.job(('plan-android',), self.confirm))
+        self.switch.connect('clicked', self.preview)
         root.pack_start(self.switch, False, False, 0)
         self.import_button = Gtk.Button(label='导入电脑端互切清单…')
         self.import_button.connect('clicked', self.import_manifest)
@@ -52,6 +58,7 @@ class App(Gtk.Window):
 
     def enabled(self):
         self.switch.set_sensitive(not self.working)
+        self.verify_cache.set_sensitive(not self.working)
         self.import_button.set_sensitive(not self.working)
 
     def job(self, arguments, after=None, writing=False):
@@ -88,7 +95,17 @@ class App(Gtk.Window):
             GLib.idle_add(finish)
         POOL.submit(work).add_done_callback(done)
 
-    def confirm(self, plan):
+    def preview(self, *_):
+        options = () if self.verify_cache.get_active() else ('--skip-cache-sha',)
+        self.job(('plan-android', *options), lambda plan: self.confirm(plan, options))
+
+    def confirm(self, plan, options):
+        if options and '已关闭清单 SHA256 比对。' in plan:
+            digests = re.findall(r'^Android (?:boot|DTBO) SHA256=([0-9a-f]{64})$', plan, re.MULTILINE)
+            if len(digests) != 2:
+                self.status.set_text('未取得现有缓存摘要，请重新预览。')
+                return
+            options = (*options, *digests)
         dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
                                    buttons=Gtk.ButtonsType.NONE, text='切换到 Android？')
         dialog.format_secondary_text(plan + '\n会先备份当前两槽 boot/dtbo，再恢复清单指定的 Android 两文件。验证后重启，活动槽不变。')
@@ -96,7 +113,7 @@ class App(Gtk.Window):
         response = dialog.run()
         dialog.destroy()
         if response == Gtk.ResponseType.OK:
-            self.job(('switch-android',), writing=True)
+            self.job(('switch-android', *options), writing=True)
 
     def import_manifest(self, *_):
         dialog = Gtk.FileChooserDialog(title='选择电脑端互切备份的 state.json', transient_for=self,
